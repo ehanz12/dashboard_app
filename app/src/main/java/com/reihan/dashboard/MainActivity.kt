@@ -1,8 +1,11 @@
 package com.reihan.dashboard
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -21,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -32,17 +36,24 @@ import androidx.navigation.compose.rememberNavController
 import com.reihan.dashboard.data.network.SessionManager
 import com.reihan.dashboard.ui.auth.AuthScreen
 import com.reihan.dashboard.ui.auth.AuthViewModel
+import com.reihan.dashboard.ui.auth.GoogleSignInHelper
+import com.reihan.dashboard.ui.auth.VerificationScreen
+import com.reihan.dashboard.ui.auth.ForgotPasswordScreen
+import com.reihan.dashboard.ui.auth.ResetPasswordScreen
+import com.reihan.dashboard.ui.analytics.AnalyticsScreen
+import com.reihan.dashboard.ui.analytics.AnalyticsViewModel
+import com.reihan.dashboard.ui.calendar.CalendarScreen
+import com.reihan.dashboard.ui.calendar.CalendarViewModel
 import com.reihan.dashboard.ui.habit.HabitScreen
 import com.reihan.dashboard.ui.habit.HabitViewModel
 import com.reihan.dashboard.ui.home.HomeScreen
 import com.reihan.dashboard.ui.home.HomeViewModel
-import com.reihan.dashboard.ui.journal.JournalScreen
-import com.reihan.dashboard.ui.journal.JournalViewModel
+import com.reihan.dashboard.ui.profile.ProfileScreen
+import com.reihan.dashboard.ui.profile.ProfileViewModel
+import com.reihan.dashboard.ui.profile.ChangePasswordScreen
 import com.reihan.dashboard.ui.task.TaskScreen
 import com.reihan.dashboard.ui.task.TaskViewModel
 import com.reihan.dashboard.ui.theme.*
-import com.reihan.dashboard.ui.timeblock.TimeblockScreen
-import com.reihan.dashboard.ui.timeblock.TimeblockViewModel
 import com.reihan.dashboard.ui.transaction.CategoryScreen
 import com.reihan.dashboard.ui.transaction.TransactionScreen
 import com.reihan.dashboard.ui.transaction.TransactionViewModel
@@ -73,15 +84,28 @@ data class BottomNavItem(
 
 val bottomNavItems = listOf(
     BottomNavItem("home", Icons.Default.Dashboard, "Home", AccentBlue),
-    BottomNavItem("tasks", Icons.Default.CheckCircleOutline, "Tasks", AccentTask),
-    BottomNavItem("journal", Icons.Default.AutoStories, "Journal", AccentJournal),
-    BottomNavItem("schedule", Icons.Default.CalendarMonth, "Schedule", AccentSchedule)
+    BottomNavItem("analytics", Icons.Default.Analytics, "Analytics", AccentBlue),
+    BottomNavItem("calendar", Icons.Default.CalendarMonth, "Calendar", AccentBlue),
+    BottomNavItem("tasks", Icons.Default.CheckCircleOutline, "Tasks", AccentTask)
 )
 
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
     val startDestination = if (SessionManager.hasToken()) "home" else "auth"
+    val context = LocalContext.current
+    val authViewModel: AuthViewModel = viewModel()
+
+    // Notification Permission Launcher
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= 33) { // Android 13 (Tiramisu)
+            permissionLauncher.launch("android.permission.POST_NOTIFICATIONS")
+        }
+    }
 
     LaunchedEffect(navController) {
         SessionManager.sessionExpiredEvent.collect {
@@ -91,10 +115,37 @@ fun AppNavigation() {
         }
     }
 
+    LaunchedEffect(SessionManager.hasToken()) {
+        if (SessionManager.hasToken()) {
+            authViewModel.syncFmcToken()
+        }
+    }
+
     // Determine if we should show bottom nav
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val showBottomNav = currentRoute in bottomNavItems.map { it.route }
+
+    // Google Sign-In launcher
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val account = GoogleSignInHelper.handleSignInResult(result)
+        if (account != null) {
+            val idToken = GoogleSignInHelper.getIdToken(account)
+            val userInfo = GoogleSignInHelper.getUserInfo(account)
+            
+            // Pass the idToken to the AuthViewModel through SavedStateHandle
+            if (idToken != null) {
+                navController.currentBackStackEntry
+                    ?.savedStateHandle
+                    ?.set("idToken", idToken)
+                navController.currentBackStackEntry
+                    ?.savedStateHandle
+                    ?.set("userName", userInfo?.first)
+            }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         NavHost(
@@ -103,13 +154,92 @@ fun AppNavigation() {
             modifier = Modifier.fillMaxSize()
         ) {
             composable("auth") {
-                val authViewModel: AuthViewModel = viewModel()
+                // Use the authViewModel from AppNavigation scope
+                
+                // Observe Google Sign-In result from savedStateHandle
+                val idTokenState = navController.currentBackStackEntry
+                    ?.savedStateHandle
+                    ?.getStateFlow<String?>("idToken", null)
+                    ?.collectAsState()
+
+                LaunchedEffect(idTokenState?.value) {
+                    val idToken = idTokenState?.value
+                    if (!idToken.isNullOrBlank()) {
+                        authViewModel.googleLogin(idToken) {
+                            authViewModel.syncFmcToken() // Sync token after Google login
+                            navController.navigate("home") {
+                                popUpTo("auth") { inclusive = true }
+                            }
+                            navController.currentBackStackEntry?.savedStateHandle?.remove<String>("idToken")
+                        }
+                    }
+                }
+                
                 AuthScreen(
                     viewModel = authViewModel,
                     onAuthSuccess = {
+                        authViewModel.syncFmcToken() // Sync token after login
                         navController.navigate("home") {
                             popUpTo("auth") { inclusive = true }
                         }
+                    },
+                    onRegisterSuccess = { email ->
+                        val encodedEmail = Uri.encode(email)
+                        navController.navigate("verify_email/$encodedEmail")
+                    },
+                    onForgotPasswordClick = {
+                        navController.navigate("forgot_password")
+                    },
+                    onGoogleSignInClick = {
+                        val signInIntent = GoogleSignInHelper.getSignInIntent(context)
+                        googleSignInLauncher.launch(signInIntent)
+                    }
+                )
+            }
+            composable("forgot_password") {
+                val authViewModel: AuthViewModel = viewModel()
+                ForgotPasswordScreen(
+                    viewModel = authViewModel,
+                    onCodeSent = { email ->
+                        val encodedEmail = Uri.encode(email)
+                        navController.navigate("reset_password/$encodedEmail")
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable("reset_password/{email}") { backStackEntry ->
+                val email = backStackEntry.arguments?.getString("email") ?: ""
+                val authViewModel: AuthViewModel = viewModel()
+                ResetPasswordScreen(
+                    email = email,
+                    viewModel = authViewModel,
+                    onResetSuccess = {
+                        navController.navigate("auth") {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable("verify_email/{email}") { backStackEntry ->
+                val email = backStackEntry.arguments?.getString("email") ?: ""
+                VerificationScreen(
+                    email = email,
+                    viewModel = authViewModel,
+                    onVerificationSuccess = {
+                        if (SessionManager.hasToken()) {
+                            authViewModel.syncFmcToken() // Sync token after verification
+                            navController.navigate("home") {
+                                popUpTo("auth") { inclusive = true }
+                            }
+                        } else {
+                            navController.navigate("auth") {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }
+                    },
+                    onBack = {
+                        navController.popBackStack("auth", inclusive = false)
                     }
                 )
             }
@@ -123,12 +253,26 @@ fun AppNavigation() {
                             popUpTo("home") { inclusive = true }
                         }
                     },
+                    onNavigateToProfile = { navController.navigate("profile") },
                     onNavigateToTransactions = { navController.navigate("transactions") },
                     onNavigateToCategories = { navController.navigate("categories") },
                     onNavigateToHabits = { navController.navigate("habits") },
                     onNavigateToTasks = { navController.navigate("tasks") },
-                    onNavigateToJournal = { navController.navigate("journal") },
-                    onNavigateToSchedule = { navController.navigate("schedule") }
+                    onNavigateToCalendar = { navController.navigate("calendar") }
+                )
+            }
+            composable("analytics") {
+                val analyticsViewModel: AnalyticsViewModel = viewModel()
+                AnalyticsScreen(
+                    viewModel = analyticsViewModel,
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable("calendar") {
+                val calendarViewModel: CalendarViewModel = viewModel()
+                CalendarScreen(
+                    viewModel = calendarViewModel,
+                    onBack = { navController.popBackStack() }
                 )
             }
             composable("transactions") {
@@ -159,19 +303,16 @@ fun AppNavigation() {
                     onBack = { navController.popBackStack() }
                 )
             }
-            composable("journal") {
-                val journalViewModel: JournalViewModel = viewModel()
-                JournalScreen(
-                    viewModel = journalViewModel,
-                    onBack = { navController.popBackStack() }
+            composable("profile") {
+                val profileViewModel: ProfileViewModel = viewModel()
+                ProfileScreen(
+                    viewModel = profileViewModel,
+                    onBack = { navController.popBackStack() },
+                    onChangePassword = { navController.navigate("change_password") }
                 )
             }
-            composable("schedule") {
-                val timeblockViewModel: TimeblockViewModel = viewModel()
-                TimeblockScreen(
-                    viewModel = timeblockViewModel,
-                    onBack = { navController.popBackStack() }
-                )
+            composable("change_password") {
+                ChangePasswordScreen(onBack = { navController.popBackStack() })
             }
         }
 

@@ -22,9 +22,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.platform.LocalContext
 import com.reihan.dashboard.ui.theme.*
 import com.reihan.dashboard.data.model.CategoryResponse
+import com.reihan.dashboard.ui.components.DeleteConfirmationDialog
+import com.reihan.dashboard.ui.components.StatusPopup
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,9 +34,10 @@ fun CategoryScreen(
     onBack: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
-    val context = LocalContext.current
     var newCategoryName by remember { mutableStateOf("") }
     var editingCategory by remember { mutableStateOf<CategoryResponse?>(null) }
+    var statusPopup by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+    var deleteConfirmId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.loadTransactionsAndCategories()
@@ -51,7 +53,7 @@ fun CategoryScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 24.dp),
+                    .padding(start = 24.dp, end = 24.dp, top = 36.dp, bottom = 24.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
@@ -71,7 +73,7 @@ fun CategoryScreen(
                 )
             }
 
-            // 2. CREATE CATEGORY FIELD (Titanium Card Panel)
+            // 2. CREATE CATEGORY FIELD
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -112,9 +114,12 @@ fun CategoryScreen(
                             if (newCategoryName.isNotBlank()) {
                                 viewModel.addCategory(
                                     name = newCategoryName,
-                                    onSuccess = { newCategoryName = "" },
+                                    onSuccess = { 
+                                        newCategoryName = ""
+                                        statusPopup = true to "Category added successfully!"
+                                    },
                                     onFailure = { err ->
-                                        android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
+                                        statusPopup = false to err
                                     }
                                 )
                             }
@@ -168,12 +173,7 @@ fun CategoryScreen(
                                         name = cat.name,
                                         onClick = { editingCategory = cat },
                                         onDelete = {
-                                            viewModel.removeCategory(
-                                                id = cat.id,
-                                                onFailure = { err ->
-                                                    android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
-                                                }
-                                            )
+                                            deleteConfirmId = cat.id
                                         }
                                     )
                                 }
@@ -216,9 +216,12 @@ fun CategoryScreen(
                                 viewModel.editCategory(
                                     id = cat.id,
                                     name = editName.trim(),
-                                    onSuccess = { editingCategory = null },
+                                    onSuccess = { 
+                                        editingCategory = null
+                                        statusPopup = true to "Category updated successfully!"
+                                    },
                                     onFailure = { err ->
-                                        android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
+                                        statusPopup = false to err
                                     }
                                 )
                             }
@@ -237,6 +240,30 @@ fun CategoryScreen(
                 modifier = Modifier.border(1.dp, BorderGlass, RoundedCornerShape(16.dp))
             )
         }
+    }
+
+    // --- STATUS POPUP ---
+    statusPopup?.let { (isSuccess, message) ->
+        StatusPopup(
+            isSuccess = isSuccess,
+            message = message,
+            onDismiss = { statusPopup = null }
+        )
+    }
+
+    // --- DELETE CONFIRMATION ---
+    deleteConfirmId?.let { id ->
+        DeleteConfirmationDialog(
+            title = "Hapus Kategori?",
+            message = "Menghapus kategori akan berpengaruh pada transaksi terkait. Anda yakin?",
+            onConfirm = {
+                viewModel.removeCategory(id) { err ->
+                    statusPopup = false to err
+                }
+                deleteConfirmId = null
+            },
+            onDismiss = { deleteConfirmId = null }
+        )
     }
 }
 

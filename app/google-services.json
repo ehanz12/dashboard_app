@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1017954671083",
+    "project_id": "dashboard-e2c15",
+    "storage_bucket": "dashboard-e2c15.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1017954671083:android:ec18792467528df450e1ae",
+        "android_client_info": {
+          "package_name": "com.reihan.dashboard"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBjLW2drz52tZW4gUCcMzhkpasriRE1OQk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -2,12 +2,15 @@ package com.reihan.dashboard.ui.auth
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -27,17 +30,23 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.reihan.dashboard.ui.components.StatusPopup
 import com.reihan.dashboard.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AuthScreen(
     viewModel: AuthViewModel,
-    onAuthSuccess: () -> Unit
+    onAuthSuccess: () -> Unit,
+    onRegisterSuccess: (String) -> Unit = {},
+    onForgotPasswordClick: () -> Unit = {},
+    onGoogleSignInClick: () -> Unit = {}
 ) {
     var isLoginMode by remember { mutableStateOf(true) }
     var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
+    var phoneNumber by remember { mutableStateOf("") }
+    var bio by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
 
@@ -59,7 +68,8 @@ fun AuthScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(32.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 32.dp, vertical = 48.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -95,9 +105,6 @@ fun AuthScreen(
 
             Spacer(modifier = Modifier.height(48.dp))
 
-            // Error/Success Messages
-            StatusMessage(authState)
-
             // Form Fields
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 if (!isLoginMode) {
@@ -107,6 +114,23 @@ fun AuthScreen(
                         label = "Full Name",
                         icon = Icons.Outlined.Person,
                         placeholder = "Your name"
+                    )
+
+                    ModernTextField(
+                        value = phoneNumber,
+                        onValueChange = { phoneNumber = it },
+                        label = "Phone Number",
+                        icon = Icons.Outlined.Phone,
+                        placeholder = "08123456789",
+                        keyboardType = KeyboardType.Phone
+                    )
+
+                    ModernTextField(
+                        value = bio,
+                        onValueChange = { bio = it },
+                        label = "Bio",
+                        icon = Icons.Outlined.Info,
+                        placeholder = "Tell us about yourself"
                     )
                 }
 
@@ -129,6 +153,20 @@ fun AuthScreen(
                     showPassword = showPassword,
                     onTogglePassword = { showPassword = !showPassword }
                 )
+                
+                if (isLoginMode) {
+                    Text(
+                        text = "Forgot Password?",
+                        style = Typography.bodySmall.copy(
+                            color = AccentBlue,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        modifier = Modifier
+                            .align(Alignment.End)
+                            .clickable { onForgotPasswordClick() }
+                            .padding(top = 4.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -137,11 +175,17 @@ fun AuthScreen(
             Button(
                 onClick = {
                     if (isLoginMode) {
-                        viewModel.login(email, password, onAuthSuccess)
+                        viewModel.login(
+                            email = email,
+                            password = password,
+                            onSuccess = onAuthSuccess,
+                            onNotVerified = { targetEmail ->
+                                onRegisterSuccess(targetEmail) // Kita reuse callback ini karena arahnya sama-sama ke verifikasi
+                            }
+                        )
                     } else {
-                        viewModel.register(name, email, password) {
-                            isLoginMode = true
-                            viewModel.resetState()
+                        viewModel.register(name, email, password, phoneNumber, bio) { registeredEmail ->
+                            onRegisterSuccess(registeredEmail)
                         }
                     }
                 },
@@ -172,6 +216,42 @@ fun AuthScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // Divider with text
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Divider(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(1.dp),
+                    color = BorderGlass
+                )
+                Text(
+                    text = "or continue with",
+                    style = Typography.bodySmall.copy(color = TextSecondary, fontSize = 12.sp)
+                )
+                Divider(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(1.dp),
+                    color = BorderGlass
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Google Sign-In Button
+            GoogleSignInButton(
+                onClick = onGoogleSignInClick,
+                isLoading = authState is AuthState.Loading
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             // Toggle Mode
             Row(
                 modifier = Modifier
@@ -196,6 +276,27 @@ fun AuthScreen(
                 )
             }
         }
+    }
+
+    // Status Popups
+    when (val state = authState) {
+        is AuthState.Error -> {
+            StatusPopup(
+                isSuccess = false,
+                message = state.message,
+                onDismiss = { viewModel.resetState() }
+            )
+        }
+        is AuthState.Success -> {
+            StatusPopup(
+                isSuccess = true,
+                message = state.message,
+                onDismiss = { 
+                    viewModel.resetState()
+                }
+            )
+        }
+        else -> {}
     }
 }
 
@@ -253,34 +354,64 @@ fun ModernTextField(
 }
 
 @Composable
-fun StatusMessage(state: AuthState) {
-    AnimatedVisibility(
-        visible = state is AuthState.Error || state is AuthState.Success,
-        enter = expandVertically() + fadeIn(),
-        exit = shrinkVertically() + fadeOut()
+fun GoogleSignInButton(
+    onClick: () -> Unit,
+    isLoading: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = DarkSurface,
+            contentColor = TextPrimary
+        ),
+        border =  BorderStroke(1.dp, BorderGlass),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
     ) {
-        val (bgColor, textColor, message) = when (state) {
-            is AuthState.Error -> Triple(ExpenseRed.copy(alpha = 0.1f), ExpenseRed, state.message)
-            is AuthState.Success -> Triple(IncomeGreen.copy(alpha = 0.1f), IncomeGreen, state.message)
-            else -> Triple(Color.Transparent, Color.Transparent, "")
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 24.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(bgColor)
-                .border(1.dp, textColor.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-                .padding(16.dp)
-        ) {
-            Text(
-                text = message,
-                color = textColor,
-                style = Typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
+        if (isLoading) {
+            CircularProgressIndicator(
+                color = AccentBlue,
+                modifier = Modifier.size(24.dp),
+                strokeWidth = 2.dp
             )
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                // Google Logo placeholder (using a styled box)
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .background(
+                            color = Color(0xFF4285F4),
+                            shape = RoundedCornerShape(4.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "G",
+                        style = Typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 10.sp
+                        )
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Continue with Google",
+                    style = Typography.labelLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp
+                    )
+                )
+            }
         }
     }
 }

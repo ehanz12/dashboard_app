@@ -17,8 +17,38 @@ interface ApiService {
         @Body request: LoginRequest
     ): AuthResponse
 
+    @POST("auth/verify-email")
+    suspend fun verifyEmail(
+        @Body request: VerifyEmailRequest
+    ): AuthResponse
+
+    @POST("auth/forgot-password")
+    suspend fun forgotPassword(
+        @Body request: ForgotPasswordRequest
+    ): AuthResponse
+
+    @POST("auth/reset-password")
+    suspend fun resetPassword(
+        @Body request: ResetPasswordRequest
+    ): AuthResponse
+
     @GET("auth/me")
     suspend fun getMe(): MeResponse
+
+    @PUT("auth/edit")
+    suspend fun editProfile(
+        @Body request: EditProfileRequest
+    ): MeResponse
+
+    @PATCH("auth/change-password")
+    suspend fun changePassword(
+        @Body request: ChangePasswordRequest
+    ): AuthResponse
+
+    @POST("auth/google")
+    suspend fun googleAuth(
+        @Body request: GoogleSignUpRequest
+    ): AuthResponse
 
     // --- CATEGORIES ---
     @GET("category")
@@ -79,13 +109,13 @@ interface ApiService {
     @POST("habits")
     suspend fun createHabit(
         @Body request: CreateHabitRequest
-    ): HabitResponse
+    ): HabitSingleResponse
 
     @PATCH("habits/{id}")
     suspend fun updateHabit(
         @Path("id") id: String,
         @Body request: CreateHabitRequest
-    ): HabitResponse
+    ): HabitSingleResponse
 
     @DELETE("habits/{id}")
     suspend fun deleteHabit(
@@ -99,25 +129,6 @@ interface ApiService {
     suspend fun toggleHabitLog(
         @Body request: ToggleHabitLogRequest
     ): ToggleHabitLogResponse
-
-    // --- JOURNAL ---
-    @GET("journals")
-    suspend fun getJournals(): JournalListResponse
-
-    @GET("journals/date/{date}")
-    suspend fun getJournalByDate(
-        @Path("date") date: String // YYYY-MM-DD
-    ): JournalSingleResponse
-
-    @POST("journals")
-    suspend fun createOrUpdateJournal(
-        @Body request: CreateJournalRequest
-    ): JournalSingleResponse
-
-    @DELETE("journals/{id}")
-    suspend fun deleteJournal(
-        @Path("id") id: String
-    ): okhttp3.ResponseBody
 
     // --- TASKS ---
     @GET("tasks")
@@ -167,4 +178,64 @@ interface ApiService {
     suspend fun deleteTimeblock(
         @Path("id") id: String
     ): okhttp3.ResponseBody
+
+    // --- SCHEDULE ---
+    @GET("schedule/today")
+    suspend fun getSchedule(
+        @Query("date") date: String? = null // YYYY-MM-DD
+    ): ScheduleDataResponse
+
+    // --- DASHBOARD ---
+    @GET("dashboard")
+    suspend fun getDashboard(): DashboardResponse
+
+    // --- ANALYTICS ---
+    @GET("analytics/summary")
+    suspend fun getAnalyticsSummary(
+        @Query("type") type: String,
+        @Query("month") month: Int? = null,
+        @Query("year") year: Int
+    ): AnalyticsSummaryResponse
+
+    @GET("analytics/finance")
+    suspend fun getFinanceAnalytics(
+        @Query("type") type: String,
+        @Query("month") month: Int? = null,
+        @Query("year") year: Int
+    ): FinanceAnalyticsResponse
+
+    @GET("analytics/categories")
+    suspend fun getCategoryAnalytics(
+        @Query("type") type: String,
+        @Query("month") month: Int? = null,
+        @Query("year") year: Int
+    ): CategoryAnalyticsResponse
+
+    @GET("analytics/habits")
+    suspend fun getHabitAnalytics(
+        @Query("type") type: String,
+        @Query("month") month: Int? = null,
+        @Query("year") year: Int
+    ): HabitAnalyticsResponse
+
+    @GET("analytics/tasks")
+    suspend fun getTaskAnalytics(
+        @Query("type") type: String,
+        @Query("month") month: Int? = null,
+        @Query("year") year: Int
+    ): TaskAnalyticsResponse
+
+    @GET("analytics/streak")
+    suspend fun getStreakAnalytics(): StreakAnalyticsResponse
+
+    // --- DEVICES ---
+    @POST("devices")
+    suspend fun saveDevice(
+        @Body request: UserDeviceRequest
+    ): retrofit2.Response<okhttp3.ResponseBody>
+
+    @HTTP(method = "DELETE", path = "devices", hasBody = true)
+    suspend fun deleteDevice(
+        @Body request: UserDeviceRequest
+    ): retrofit2.Response<okhttp3.ResponseBody>
 }

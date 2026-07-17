@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
@@ -33,6 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.reihan.dashboard.data.model.CategoryResponse
 import com.reihan.dashboard.data.model.TransactionResponse
+import com.reihan.dashboard.ui.components.DeleteConfirmationDialog
+import com.reihan.dashboard.ui.components.StatusPopup
 import com.reihan.dashboard.ui.home.formatCurrency
 import com.reihan.dashboard.ui.theme.*
 import java.text.SimpleDateFormat
@@ -45,7 +49,6 @@ fun TransactionScreen(
     onBack: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
-    val context = LocalContext.current
 
     var selectedType by remember { mutableStateOf("All") }
     var selectedCategoryId by remember { mutableStateOf("All") }
@@ -54,6 +57,8 @@ fun TransactionScreen(
     var endDate by remember { mutableStateOf("") }
     var showAddDialog by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<TransactionResponse?>(null) }
+    var statusPopup by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+    var deleteConfirmId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(selectedType, selectedCategoryId, searchQuery, startDate, endDate) {
         viewModel.loadTransactionsAndCategories(
@@ -68,22 +73,21 @@ fun TransactionScreen(
     Scaffold(
         containerColor = DarkBg,
         floatingActionButton = {
-            FloatingActionButton(
+            ExtendedFloatingActionButton(
                 onClick = { showAddDialog = true },
                 containerColor = AccentBlue,
                 contentColor = DarkBg,
-                shape = CircleShape,
-                modifier = Modifier.padding(bottom = 16.dp, end = 8.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Transaction")
-            }
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.padding(bottom = 96.dp, end = 16.dp),
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 12.dp),
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("New Record", fontWeight = FontWeight.Black) }
+            )
         }
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
-            // --- TOP BAR ---
             TransactionTopBar(onBack = onBack)
 
-            // --- FILTERS SECTION ---
             TransactionFilters(
                 searchQuery = searchQuery,
                 onSearchChange = { searchQuery = it },
@@ -95,7 +99,6 @@ fun TransactionScreen(
                 onTypeChange = { selectedType = it }
             )
 
-            // --- CATEGORIES ---
             if (state is TransactionState.Success) {
                 CategoryScrollRow(
                     categories = (state as TransactionState.Success).categories,
@@ -104,7 +107,6 @@ fun TransactionScreen(
                 )
             }
 
-            // --- TRANSACTIONS LIST ---
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 when (val current = state) {
                     is TransactionState.Loading -> {
@@ -129,12 +131,7 @@ fun TransactionScreen(
                                         transaction = transaction,
                                         onClick = { editingTransaction = transaction },
                                         onDelete = {
-                                            viewModel.removeTransaction(
-                                                id = transaction.id,
-                                                onFailure = { err ->
-                                                    android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
-                                                }
-                                            )
+                                            deleteConfirmId = transaction.id
                                         }
                                     )
                                 }
@@ -146,7 +143,6 @@ fun TransactionScreen(
         }
     }
 
-    // --- DIALOGS ---
     if (showAddDialog && state is TransactionState.Success) {
         TransactionFormDialog(
             title = "New Transaction",
@@ -159,9 +155,12 @@ fun TransactionScreen(
                     type = type,
                     description = desc,
                     transactionDate = date,
-                    onSuccess = { showAddDialog = false },
+                    onSuccess = { 
+                        showAddDialog = false
+                        statusPopup = true to "Transaction added successfully!"
+                    },
                     onFailure = { err ->
-                        android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
+                        statusPopup = false to err
                     }
                 )
             }
@@ -182,12 +181,37 @@ fun TransactionScreen(
                     type = type,
                     description = desc,
                     transactionDate = date,
-                    onSuccess = { editingTransaction = null },
+                    onSuccess = { 
+                        editingTransaction = null
+                        statusPopup = true to "Transaction updated successfully!"
+                    },
                     onFailure = { err ->
-                        android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
+                        statusPopup = false to err
                     }
                 )
             }
+        )
+    }
+
+    statusPopup?.let { (isSuccess, message) ->
+        StatusPopup(
+            isSuccess = isSuccess,
+            message = message,
+            onDismiss = { statusPopup = null }
+        )
+    }
+
+    deleteConfirmId?.let { id ->
+        DeleteConfirmationDialog(
+            title = "Hapus Transaksi?",
+            message = "Apakah Anda yakin ingin menghapus transaksi ini?",
+            onConfirm = {
+                viewModel.removeTransaction(id) { err ->
+                    statusPopup = false to err
+                }
+                deleteConfirmId = null
+            },
+            onDismiss = { deleteConfirmId = null }
         )
     }
 }
@@ -197,7 +221,7 @@ fun TransactionTopBar(onBack: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(24.dp),
+            .padding(start = 24.dp, end = 24.dp, top = 36.dp, bottom = 24.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -233,7 +257,6 @@ fun TransactionFilters(
     val context = LocalContext.current
 
     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
-        // Search Field
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchChange,
@@ -259,7 +282,6 @@ fun TransactionFilters(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Type Selector
             Row(
                 modifier = Modifier
                     .weight(1.5f)
@@ -290,7 +312,6 @@ fun TransactionFilters(
                 }
             }
             
-            // Start Date
             Row(
                 modifier = Modifier
                     .weight(1f)
@@ -310,7 +331,7 @@ fun TransactionFilters(
                             }
                         }
                         DatePickerDialog(context, { _, y, m, d ->
-                            onStartDateChange(String.format("%04d-%02d-%02d", y, m + 1, d))
+                            onStartDateChange(String.format(Locale.getDefault(), "%04d-%02d-%02d", y, m + 1, d))
                         }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
                     }
                     .padding(12.dp),
@@ -328,7 +349,6 @@ fun TransactionFilters(
                 )
             }
 
-            // End Date
             Row(
                 modifier = Modifier
                     .weight(1f)
@@ -348,7 +368,7 @@ fun TransactionFilters(
                             }
                         }
                         DatePickerDialog(context, { _, y, m, d ->
-                            onEndDateChange(String.format("%04d-%02d-%02d", y, m + 1, d))
+                            onEndDateChange(String.format(Locale.getDefault(), "%04d-%02d-%02d", y, m + 1, d))
                         }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
                     }
                     .padding(12.dp),
@@ -511,8 +531,12 @@ fun TransactionFormDialog(
             Text(title, style = Typography.headlineSmall.copy(fontWeight = FontWeight.Black))
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                // Type Switcher
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -570,7 +594,6 @@ fun TransactionFormDialog(
                     )
                 )
 
-                // Category Dropdown
                 Box {
                     OutlinedTextField(
                         value = categories.find { it.id == selectedCategoryId }?.name ?: "Select Category",
@@ -604,7 +627,6 @@ fun TransactionFormDialog(
                     }
                 }
 
-                // Date Selector
                 val context = LocalContext.current
                 Box(modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
@@ -638,7 +660,7 @@ fun TransactionFormDialog(
                                     } catch (e: Exception) {}
                                 }
                                 DatePickerDialog(context, { _, y, m, d ->
-                                    date = String.format("%04d-%02d-%02d", y, m + 1, d)
+                                    date = String.format(Locale.getDefault(), "%04d-%02d-%02d", y, m + 1, d)
                                 }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
                             }
                     )

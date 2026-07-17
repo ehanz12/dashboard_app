@@ -8,8 +8,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -31,7 +33,10 @@ import android.app.DatePickerDialog
 import androidx.compose.ui.platform.LocalContext
 import java.util.Calendar
 import com.reihan.dashboard.data.model.TaskResponse
+import com.reihan.dashboard.ui.components.DeleteConfirmationDialog
+import com.reihan.dashboard.ui.components.StatusPopup
 import com.reihan.dashboard.ui.theme.*
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,9 +45,10 @@ fun TaskScreen(
     onBack: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
-    val context = LocalContext.current
     var showDialog by remember { mutableStateOf(false) }
     var editingTask by remember { mutableStateOf<TaskResponse?>(null) }
+    var statusPopup by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+    var deleteConfirmId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.loadTasks()
@@ -51,19 +57,19 @@ fun TaskScreen(
     Scaffold(
         containerColor = DarkBg,
         floatingActionButton = {
-            FloatingActionButton(
+            ExtendedFloatingActionButton(
                 onClick = { showDialog = true },
                 containerColor = AccentTask,
                 contentColor = DarkBg,
-                shape = CircleShape,
-                modifier = Modifier.padding(bottom = 96.dp, end = 8.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Task")
-            }
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.padding(bottom = 96.dp, end = 16.dp),
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 12.dp),
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("New Task", fontWeight = FontWeight.Black) }
+            )
         }
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
-            // --- TOP BAR ---
             TaskTopBar(onBack = onBack)
 
             when (val s = state) {
@@ -81,7 +87,6 @@ fun TaskScreen(
                         contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 100.dp),
                         verticalArrangement = Arrangement.spacedBy(24.dp)
                     ) {
-                        // Q1: DO FIRST
                         item {
                             QuadrantSection(
                                 title = "Do First",
@@ -89,11 +94,14 @@ fun TaskScreen(
                                 color = QuadrantQ1,
                                 tasks = s.q1,
                                 viewModel = viewModel,
-                                onClickTask = { editingTask = it }
+                                onClickTask = { editingTask = it },
+                                onDeleteTask = { deleteConfirmId = it },
+                                onStatusUpdate = { isSuccess, message ->
+                                    statusPopup = isSuccess to message
+                                }
                             )
                         }
 
-                        // Q2: SCHEDULE
                         item {
                             QuadrantSection(
                                 title = "Schedule",
@@ -101,11 +109,14 @@ fun TaskScreen(
                                 color = QuadrantQ2,
                                 tasks = s.q2,
                                 viewModel = viewModel,
-                                onClickTask = { editingTask = it }
+                                onClickTask = { editingTask = it },
+                                onDeleteTask = { deleteConfirmId = it },
+                                onStatusUpdate = { isSuccess, message ->
+                                    statusPopup = isSuccess to message
+                                }
                             )
                         }
 
-                        // Q3: DELEGATE
                         item {
                             QuadrantSection(
                                 title = "Delegate",
@@ -113,11 +124,14 @@ fun TaskScreen(
                                 color = QuadrantQ3,
                                 tasks = s.q3,
                                 viewModel = viewModel,
-                                onClickTask = { editingTask = it }
+                                onClickTask = { editingTask = it },
+                                onDeleteTask = { deleteConfirmId = it },
+                                onStatusUpdate = { isSuccess, message ->
+                                    statusPopup = isSuccess to message
+                                }
                             )
                         }
 
-                        // Q4: ELIMINATE
                         item {
                             QuadrantSection(
                                 title = "Eliminate",
@@ -125,7 +139,11 @@ fun TaskScreen(
                                 color = QuadrantQ4,
                                 tasks = s.q4,
                                 viewModel = viewModel,
-                                onClickTask = { editingTask = it }
+                                onClickTask = { editingTask = it },
+                                onDeleteTask = { deleteConfirmId = it },
+                                onStatusUpdate = { isSuccess, message ->
+                                    statusPopup = isSuccess to message
+                                }
                             )
                         }
                     }
@@ -143,9 +161,12 @@ fun TaskScreen(
                     description = desc,
                     quadrant = quad,
                     dueDate = dueDate,
-                    onSuccess = { showDialog = false },
+                    onSuccess = { 
+                        showDialog = false
+                        statusPopup = true to "Task created successfully!"
+                    },
                     onFailure = { err ->
-                        android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
+                        statusPopup = false to err
                     }
                 )
             }
@@ -165,12 +186,37 @@ fun TaskScreen(
                     quadrant = quad,
                     isCompleted = task.isCompleted,
                     dueDate = dueDate,
-                    onSuccess = { editingTask = null },
+                    onSuccess = { 
+                        editingTask = null
+                        statusPopup = true to "Task updated successfully!"
+                    },
                     onFailure = { err ->
-                        android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
+                        statusPopup = false to err
                     }
                 )
             }
+        )
+    }
+
+    statusPopup?.let { (isSuccess, message) ->
+        StatusPopup(
+            isSuccess = isSuccess,
+            message = message,
+            onDismiss = { statusPopup = null }
+        )
+    }
+
+    deleteConfirmId?.let { id ->
+        DeleteConfirmationDialog(
+            title = "Hapus Tugas?",
+            message = "Apakah Anda yakin ingin menghapus tugas ini?",
+            onConfirm = {
+                viewModel.deleteTask(id) { err ->
+                    statusPopup = false to err
+                }
+                deleteConfirmId = null
+            },
+            onDismiss = { deleteConfirmId = null }
         )
     }
 }
@@ -180,7 +226,7 @@ fun TaskTopBar(onBack: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(24.dp),
+            .padding(start = 24.dp, end = 24.dp, top = 36.dp, bottom = 24.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -209,9 +255,10 @@ fun QuadrantSection(
     color: Color,
     tasks: List<TaskResponse>,
     viewModel: TaskViewModel,
-    onClickTask: (TaskResponse) -> Unit
+    onClickTask: (TaskResponse) -> Unit,
+    onDeleteTask: (String) -> Unit,
+    onStatusUpdate: (Boolean, String) -> Unit
 ) {
-    val context = LocalContext.current
     Column {
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
@@ -254,17 +301,12 @@ fun QuadrantSection(
                         viewModel.toggleTask(
                             id = task.id,
                             onFailure = { err ->
-                                android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
+                                onStatusUpdate(false, err)
                             }
                         )
                     },
                     onDelete = {
-                        viewModel.deleteTask(
-                            id = task.id,
-                            onFailure = { err ->
-                                android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
-                            }
-                        )
+                        onDeleteTask(task.id)
                     }
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -293,7 +335,6 @@ fun ModernTaskItem(
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Custom Checkbox
         Box(
             modifier = Modifier
                 .size(24.dp)
@@ -367,8 +408,12 @@ fun TaskFormDialog(
             Text(if (task == null) "Create Task" else "Edit Task", style = Typography.headlineSmall.copy(fontWeight = FontWeight.Black))
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                // Title Field
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 Column {
                     Text("TITLE", style = Typography.labelSmall.copy(color = AccentTask, fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
                     Spacer(modifier = Modifier.height(8.dp))
@@ -389,7 +434,6 @@ fun TaskFormDialog(
                     )
                 }
 
-                // Description Field
                 Column {
                     Text("DESCRIPTION", style = Typography.labelSmall.copy(color = AccentTask, fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
                     Spacer(modifier = Modifier.height(8.dp))
@@ -411,7 +455,6 @@ fun TaskFormDialog(
                     )
                 }
 
-                // Due Date Field (Optional)
                 Column {
                     Text("DUE DATE", style = Typography.labelSmall.copy(color = AccentTask, fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
                     Spacer(modifier = Modifier.height(8.dp))
@@ -456,14 +499,13 @@ fun TaskFormDialog(
                                         }
                                     }
                                     DatePickerDialog(context, { _, y, m, d ->
-                                        dueDate = String.format("%04d-%02d-%02d", y, m + 1, d)
+                                        dueDate = String.format(Locale.getDefault(), "%04d-%02d-%02d", y, m + 1, d)
                                     }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
                                 }
                         )
                     }
                 }
 
-                // Quadrant Selector
                 Column {
                     Text("QUADRANT", style = Typography.labelSmall.copy(color = AccentTask, fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
                     Spacer(modifier = Modifier.height(12.dp))
