@@ -25,7 +25,11 @@ import androidx.compose.ui.unit.sp
 import com.reihan.dashboard.ui.theme.*
 import com.reihan.dashboard.data.model.CategoryResponse
 import com.reihan.dashboard.ui.components.DeleteConfirmationDialog
+import com.reihan.dashboard.ui.components.NeoBadge
+import com.reihan.dashboard.ui.components.NeoButton
+import com.reihan.dashboard.ui.components.NeoCard
 import com.reihan.dashboard.ui.components.StatusPopup
+import com.reihan.dashboard.ui.components.dotGridBackground
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,70 +50,83 @@ fun CategoryScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkBg)
+            .dotGridBackground()
+            .background(NeoBg)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // 1. TOOLBAR
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 24.dp, end = 24.dp, top = 36.dp, bottom = 24.dp),
+                    .padding(start = 20.dp, end = 20.dp, top = 28.dp, bottom = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = onBack,
+                Box(
                     modifier = Modifier
                         .size(42.dp)
-                        .clip(CircleShape)
-                        .background(DarkSurface)
-                        .border(1.dp, BorderGlass, CircleShape)
+                        .clickable { onBack() }
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary, modifier = Modifier.size(18.dp))
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .offset(x = 3.dp, y = 3.dp)
+                            .background(Color.Black, RoundedCornerShape(10.dp))
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.White, RoundedCornerShape(10.dp))
+                            .border(2.dp, Color.Black, RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.Black, modifier = Modifier.size(20.dp))
+                    }
                 }
                 Spacer(modifier = Modifier.width(16.dp))
                 Text(
                     text = "Categories",
-                    style = Typography.headlineMedium.copy(fontWeight = FontWeight.Black, color = TextPrimary)
+                    style = Typography.headlineMedium.copy(fontWeight = FontWeight.Black, color = Color.Black)
                 )
             }
 
             // 2. CREATE CATEGORY FIELD
-            Column(
+            NeoCard(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(DarkSurface)
-                    .border(1.dp, BorderGlass, RoundedCornerShape(12.dp))
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                    .padding(horizontal = 20.dp),
+                backgroundColor = Color.White,
+                borderColor = Color.Black,
+                shadowColor = Color.Black,
+                shadowOffset = 4.dp,
+                cornerRadius = 12.dp
             ) {
-                Text(
-                    text = "CREATE NEW CATEGORY",
-                    style = Typography.labelLarge.copy(color = AccentBlue, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, fontSize = 10.sp)
-                )
+                NeoBadge(text = "CREATE NEW CATEGORY", containerColor = NeoCyan, contentColor = Color.Black)
+                Spacer(modifier = Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     OutlinedTextField(
                         value = newCategoryName,
                         onValueChange = { newCategoryName = it },
-                        placeholder = { Text("e.g. Shopping", color = TextSecondary.copy(alpha = 0.5f), fontSize = 14.sp) },
+                        placeholder = { Text("e.g. Shopping", color = NeoTextSecondary.copy(alpha = 0.5f), fontSize = 14.sp) },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            cursorColor = AccentBlue,
-                            focusedBorderColor = AccentBlue,
-                            unfocusedBorderColor = BorderGlass,
-                            focusedContainerColor = DarkBg,
-                            unfocusedContainerColor = DarkBg
+                            focusedTextColor = Color.Black,
+                            unfocusedTextColor = Color.Black,
+                            cursorColor = Color.Black,
+                            focusedBorderColor = Color.Black,
+                            unfocusedBorderColor = Color.Black,
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White
                         ),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1f)
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .border(2.dp, Color.Black, RoundedCornerShape(10.dp)),
+                        singleLine = true
                     )
-                    Button(
+                    NeoButton(
                         onClick = {
                             if (newCategoryName.isNotBlank()) {
                                 viewModel.addCategory(
@@ -124,11 +141,12 @@ fun CategoryScreen(
                                 )
                             }
                         },
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentBlue, contentColor = DarkBg),
+                        containerColor = NeoYellow,
+                        contentColor = Color.Black,
+                        shadowOffset = 3.dp,
                         modifier = Modifier.height(52.dp)
                     ) {
-                        Text("ADD", fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 1.sp)
+                        Text("ADD", fontWeight = FontWeight.Black, fontSize = 12.sp, color = Color.Black)
                     }
                 }
             }
@@ -136,31 +154,31 @@ fun CategoryScreen(
             // 3. CATEGORIES LIST
             Text(
                 text = "YOUR CATEGORIES",
-                style = Typography.labelLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, color = TextSecondary, fontSize = 10.sp),
-                modifier = Modifier.padding(start = 28.dp, end = 28.dp, top = 28.dp, bottom = 12.dp)
+                style = Typography.labelSmall.copy(fontWeight = FontWeight.Black, letterSpacing = 1.5.sp, color = Color.Black),
+                modifier = Modifier.padding(start = 24.dp, top = 24.dp, bottom = 12.dp)
             )
 
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
+                    .padding(horizontal = 20.dp)
             ) {
                 when (val current = state) {
                     is TransactionState.Loading -> {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = AccentBlue)
+                            CircularProgressIndicator(color = Color.Black)
                         }
                     }
                     is TransactionState.Error -> {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(current.message, color = ExpenseRed, style = Typography.bodyMedium)
+                            Text(current.message, color = NeoRed, style = Typography.bodyMedium)
                         }
                     }
                     is TransactionState.Success -> {
                         if (current.categories.isEmpty()) {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text("No categories created yet", color = TextSecondary, style = Typography.bodyMedium)
+                                Text("No categories created yet", color = NeoTextSecondary, style = Typography.bodyMedium)
                             }
                         } else {
                             LazyColumn(
@@ -184,39 +202,41 @@ fun CategoryScreen(
             }
         }
 
-        // EDIT CATEGORY DIALOG
+        // Edit Dialog
         if (editingCategory != null) {
-            val cat = editingCategory!!
-            var editName by remember { mutableStateOf(cat.name) }
+            var catName by remember { mutableStateOf(editingCategory!!.name) }
             AlertDialog(
                 onDismissRequest = { editingCategory = null },
-                title = { Text("Edit Category", color = TextPrimary) },
+                containerColor = Color.White,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.border(2.5.dp, Color.Black, RoundedCornerShape(16.dp)),
+                title = { Text("Edit Category", style = Typography.titleLarge.copy(fontWeight = FontWeight.Black, color = Color.Black)) },
                 text = {
                     OutlinedTextField(
-                        value = editName,
-                        onValueChange = { editName = it },
-                        placeholder = { Text("Category Name", color = TextSecondary) },
+                        value = catName,
+                        onValueChange = { catName = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(2.dp, Color.Black, RoundedCornerShape(10.dp)),
+                        shape = RoundedCornerShape(10.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            cursorColor = AccentBlue,
-                            focusedBorderColor = AccentBlue,
-                            unfocusedBorderColor = BorderGlass,
-                            focusedContainerColor = DarkBg,
-                            unfocusedContainerColor = DarkBg
-                        ),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
+                            focusedTextColor = Color.Black,
+                            unfocusedTextColor = Color.Black,
+                            focusedBorderColor = Color.Black,
+                            unfocusedBorderColor = Color.Black,
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White
+                        )
                     )
                 },
                 confirmButton = {
-                    Button(
+                    NeoButton(
                         onClick = {
-                            if (editName.isNotBlank()) {
+                            if (catName.isNotBlank()) {
                                 viewModel.editCategory(
-                                    id = cat.id,
-                                    name = editName.trim(),
-                                    onSuccess = { 
+                                    id = editingCategory!!.id,
+                                    name = catName,
+                                    onSuccess = {
                                         editingCategory = null
                                         statusPopup = true to "Category updated successfully!"
                                     },
@@ -226,44 +246,40 @@ fun CategoryScreen(
                                 )
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentBlue, contentColor = DarkBg)
+                        containerColor = NeoYellow
                     ) {
-                        Text("Save", fontWeight = FontWeight.Bold)
+                        Text("Save", fontWeight = FontWeight.Black, color = Color.Black)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { editingCategory = null }) {
-                        Text("Cancel", color = TextSecondary)
+                        Text("Cancel", color = NeoTextSecondary, fontWeight = FontWeight.Bold)
                     }
-                },
-                containerColor = DarkSurface,
-                modifier = Modifier.border(1.dp, BorderGlass, RoundedCornerShape(16.dp))
+                }
             )
         }
-    }
 
-    // --- STATUS POPUP ---
-    statusPopup?.let { (isSuccess, message) ->
-        StatusPopup(
-            isSuccess = isSuccess,
-            message = message,
-            onDismiss = { statusPopup = null }
-        )
-    }
+        statusPopup?.let { (isSuccess, message) ->
+            StatusPopup(
+                isSuccess = isSuccess,
+                message = message,
+                onDismiss = { statusPopup = null }
+            )
+        }
 
-    // --- DELETE CONFIRMATION ---
-    deleteConfirmId?.let { id ->
-        DeleteConfirmationDialog(
-            title = "Hapus Kategori?",
-            message = "Menghapus kategori akan berpengaruh pada transaksi terkait. Anda yakin?",
-            onConfirm = {
-                viewModel.removeCategory(id) { err ->
-                    statusPopup = false to err
-                }
-                deleteConfirmId = null
-            },
-            onDismiss = { deleteConfirmId = null }
-        )
+        deleteConfirmId?.let { id ->
+            DeleteConfirmationDialog(
+                title = "Hapus Kategori?",
+                message = "Apakah Anda yakin ingin menghapus kategori ini?",
+                onConfirm = {
+                    viewModel.removeCategory(id) { err ->
+                        statusPopup = false to err
+                    }
+                    deleteConfirmId = null
+                },
+                onDismiss = { deleteConfirmId = null }
+            )
+        }
     }
 }
 
@@ -273,42 +289,40 @@ fun CategoryItemRow(
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(DarkSurface)
-            .border(1.dp, BorderGlass, RoundedCornerShape(12.dp))
-            .clickable { onClick() }
-            .padding(14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+    NeoCard(
+        modifier = Modifier.fillMaxWidth(),
+        backgroundColor = Color.White,
+        borderColor = Color.Black,
+        shadowColor = Color.Black,
+        shadowOffset = 3.dp,
+        cornerRadius = 10.dp,
+        onClick = onClick,
+        contentPadding = 12.dp
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(AccentBlue.copy(alpha = 0.08f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Default.Category, contentDescription = null, tint = AccentBlue, modifier = Modifier.size(16.dp))
-            }
-            Spacer(modifier = Modifier.width(14.dp))
-            Text(
-                text = name,
-                style = Typography.labelLarge.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary)
-            )
-        }
-
-        IconButton(
-            onClick = onDelete,
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(BorderGlass)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = ExpenseRed.copy(alpha = 0.8f), modifier = Modifier.size(14.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(NeoCyan, RoundedCornerShape(8.dp))
+                        .border(1.5.dp, Color.Black, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Category, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = name,
+                    style = Typography.bodyLarge.copy(fontWeight = FontWeight.Black, color = Color.Black)
+                )
+            }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = NeoRed, modifier = Modifier.size(20.dp))
+            }
         }
     }
 }

@@ -32,6 +32,7 @@ import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import com.github.mikephil.charting.formatter.PercentFormatter
 import com.reihan.dashboard.data.model.*
 import com.reihan.dashboard.ui.theme.*
+import com.reihan.dashboard.ui.components.dotGridBackground
 import java.text.NumberFormat
 import java.util.*
 
@@ -55,17 +56,17 @@ fun AnalyticsScreen(
     }
 
     Scaffold(
-        containerColor = DarkBg,
+        containerColor = NeoBg,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Analytics", style = Typography.titleLarge.copy(fontWeight = FontWeight.Black)) },
+                title = { Text("Analytics", style = Typography.titleLarge.copy(fontWeight = FontWeight.Black, color = Color.Black)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, null)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.Black)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBg)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = NeoBg)
             )
         }
     ) { padding ->
@@ -73,6 +74,7 @@ fun AnalyticsScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
+                .dotGridBackground()
         ) {
             // 1. FILTER SECTION
             AnalyticsFilters(

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,9 +37,20 @@ import androidx.compose.ui.unit.sp
 import com.reihan.dashboard.data.model.HabitLogTodayResponse
 import com.reihan.dashboard.data.model.HabitMini
 import com.reihan.dashboard.data.model.HabitSummary
+import android.app.Activity
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.reihan.dashboard.ui.components.DeleteConfirmationDialog
+import com.reihan.dashboard.ui.components.NeoBadge
+import com.reihan.dashboard.ui.components.NeoButton
+import com.reihan.dashboard.ui.components.NeoCard
 import com.reihan.dashboard.ui.components.StatusPopup
+import com.reihan.dashboard.ui.components.dotGridBackground
 import com.reihan.dashboard.ui.theme.*
+import com.reihan.dashboard.util.VoiceActionProcessor
+import com.reihan.dashboard.util.VoiceActionResult
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -55,6 +67,59 @@ fun HabitScreen(
     var deleteConfirmId by remember { mutableStateOf<String?>(null) }
     
     val listState = rememberLazyListState()
+
+    // Speech Recognizer Activity Launcher for Habits
+    val speechLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val spokenText = matches?.firstOrNull()
+            if (!spokenText.isNullOrBlank() && state is HabitState.Success) {
+                val succ = state as HabitState.Success
+                val actionResult = VoiceActionProcessor.processSpeech(
+                    spokenText = spokenText,
+                    habitsToday = succ.habitsToday,
+                    allHabits = succ.allHabits,
+                    allTasks = emptyList(),
+                    categories = emptyList()
+                )
+                when (actionResult) {
+                    is VoiceActionResult.HabitCompleted -> {
+                        viewModel.toggleHabitToday(actionResult.habitId) { err ->
+                            statusPopup = false to err
+                        }
+                        statusPopup = true to "Berhasil menyelesaikan Habit \"${actionResult.habitName}\"! 💪"
+                    }
+                    is VoiceActionResult.NoMatch -> {
+                        statusPopup = false to actionResult.reason
+                    }
+                    else -> {
+                        statusPopup = false to "Tidak menemukan habit yang sesuai dengan \"$spokenText\"."
+                    }
+                }
+            }
+        }
+    }
+
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "id-ID")
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Bicara habit Anda (contoh: 'aku selesai solat ashar')")
+            }
+            speechLauncher.launch(intent)
+        } else {
+            statusPopup = false to "Izin mikrofon dibutuhkan untuk menyelesaikan habit lewat suara."
+        }
+    }
+
+    fun startVoiceInput() {
+        audioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+    }
 
     LaunchedEffect(Unit) {
         viewModel.loadHabitData(isRefresh = true)
@@ -78,24 +143,43 @@ fun HabitScreen(
     }
 
     Scaffold(
-        containerColor = DarkBg,
+        containerColor = NeoBg,
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showAddDialog = true },
-                containerColor = AccentBlue,
-                contentColor = DarkBg,
-                shape = RoundedCornerShape(16.dp),
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.padding(bottom = 80.dp)
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Habit")
+                FloatingActionButton(
+                    onClick = { startVoiceInput() },
+                    containerColor = NeoCyan,
+                    contentColor = Color.Black,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.border(2.5.dp, Color.Black, RoundedCornerShape(12.dp))
+                ) {
+                    Icon(Icons.Default.Mic, contentDescription = "Voice Habit", tint = Color.Black)
+                }
+                FloatingActionButton(
+                    onClick = { showAddDialog = true },
+                    containerColor = NeoYellow,
+                    contentColor = Color.Black,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.border(2.5.dp, Color.Black, RoundedCornerShape(12.dp))
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Habit", tint = Color.Black)
+                }
             }
         }
     ) { paddingValues ->
-        Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .padding(paddingValues)
+                .fillMaxSize()
+                .dotGridBackground()
+        ) {
             when (val s = state) {
                 is HabitState.Loading -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = AccentBlue, strokeWidth = 2.dp)
+                        CircularProgressIndicator(color = Color.Black, strokeWidth = 3.dp)
                     }
                 }
                 is HabitState.Error -> {
@@ -118,7 +202,6 @@ fun HabitScreen(
         }
     }
 
-    // Dialogs...
     if (showAddDialog) {
         HabitFormDialog(
             title = "Create New Habit",
@@ -242,7 +325,7 @@ fun HabitRedesignedContent(
         if (current.allHabits.isEmpty()) {
             item { 
                 Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                    Text("No habits found. Tap + to add one.", color = TextSecondary, fontSize = 14.sp)
+                    Text("No habits found. Tap + to add one.", color = NeoTextSecondary, fontSize = 14.sp)
                 }
             }
         } else {
@@ -258,7 +341,7 @@ fun HabitRedesignedContent(
         if (current.isNextPageLoading) {
             item {
                 Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = AccentBlue, modifier = Modifier.size(24.dp))
+                    CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
                 }
             }
         }
@@ -272,69 +355,75 @@ fun HabitPremiumHeader(onBack: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, top = 36.dp, bottom = 12.dp),
+            .padding(start = 20.dp, end = 20.dp, top = 28.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        IconButton(
-            onClick = onBack,
+        Box(
             modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(DarkSurface)
+                .size(42.dp)
+                .clickable { onBack() }
         ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = TextPrimary, modifier = Modifier.size(20.dp))
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .offset(x = 3.dp, y = 3.dp)
+                    .background(Color.Black, RoundedCornerShape(10.dp))
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White, RoundedCornerShape(10.dp))
+                    .border(2.dp, Color.Black, RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.Black, modifier = Modifier.size(20.dp))
+            }
         }
         
         Column(horizontalAlignment = Alignment.End) {
-            Text("Habit Tracker", style = Typography.headlineSmall.copy(fontWeight = FontWeight.Black))
-            Text(monthYear, style = Typography.bodySmall.copy(color = TextSecondary, letterSpacing = 0.5.sp))
+            Text("Habit Tracker", style = Typography.headlineSmall.copy(fontWeight = FontWeight.Black, color = Color.Black))
+            Text(monthYear, style = Typography.bodySmall.copy(color = NeoTextSecondary, fontWeight = FontWeight.Bold))
         }
     }
 }
 
 @Composable
 fun PremiumWeekCalendar() {
-    val calendar = Calendar.getInstance()
-    val today = calendar.get(Calendar.DAY_OF_MONTH)
-    
-    // Find Monday of current week
-    calendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-    val weekDates = mutableListOf<Pair<String, Int>>()
-    val dayNames = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-    
-    for (i in 0..6) {
-        weekDates.add(dayNames[i] to calendar.get(Calendar.DAY_OF_MONTH))
-        calendar.add(Calendar.DAY_OF_MONTH, 1)
+    val days = remember {
+        val calendar = Calendar.getInstance()
+        val list = mutableListOf<Pair<String, Int>>()
+        val dayNames = arrayOf("S", "M", "T", "W", "T", "F", "S")
+        for (i in -3..3) {
+            val cal = calendar.clone() as Calendar
+            cal.add(Calendar.DAY_OF_YEAR, i)
+            val dayName = dayNames[cal.get(Calendar.DAY_OF_WEEK) - 1]
+            val dayNum = cal.get(Calendar.DAY_OF_MONTH)
+            list.add(dayName to dayNum)
+        }
+        list
     }
 
     LazyRow(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 16.dp),
-        contentPadding = PaddingValues(horizontal = 24.dp),
+            .padding(horizontal = 20.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        items(weekDates) { (name, date) ->
-            val isSelected = date == today
-            val animatedColor by animateColorAsState(if (isSelected) AccentBlue else Color.Transparent)
-            val animatedTextColor by animateColorAsState(if (isSelected) DarkBg else TextSecondary)
-            
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
+        itemsIndexed(days) { index, pair ->
+            val isToday = index == 3
+            Box(
                 modifier = Modifier
-                    .width(46.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(animatedColor)
-                    .clickable { /* Handle date selection if needed */ }
-                    .padding(vertical = 12.dp)
+                    .width(42.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isToday) NeoYellow else Color.White)
+                    .border(2.dp, Color.Black, RoundedCornerShape(10.dp))
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Text(name, style = Typography.labelSmall.copy(color = if (isSelected) DarkBg.copy(alpha = 0.6f) else TextSecondary, fontSize = 10.sp))
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(date.toString(), style = Typography.titleMedium.copy(color = animatedTextColor, fontWeight = FontWeight.Black))
-                
-                if (isSelected) {
-                    Box(Modifier.size(4.dp).clip(CircleShape).background(DarkBg))
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(pair.first, style = Typography.labelSmall.copy(color = Color.Black, fontWeight = FontWeight.Black))
+                    Text("${pair.second}", style = Typography.bodyLarge.copy(fontWeight = FontWeight.Black, color = Color.Black))
                 }
             }
         }
@@ -346,28 +435,28 @@ fun HabitStatsRow(summary: HabitSummary?) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         StatPill(
             icon = Icons.Default.Whatshot,
-            label = "Streak",
+            label = "STREAK",
             value = "${summary?.currentStreak ?: 0} Days",
-            color = Color(0xFFF97316),
+            color = NeoOrange,
+            modifier = Modifier.weight(1f)
+        )
+        StatPill(
+            icon = Icons.Default.CheckCircle,
+            label = "RATE",
+            value = "${summary?.completionRate ?: 0}%",
+            color = NeoGreen,
             modifier = Modifier.weight(1f)
         )
         StatPill(
             icon = Icons.Default.EmojiEvents,
-            label = "Best",
+            label = "LONGEST",
             value = "${summary?.longestStreak ?: 0} Days",
-            color = Color(0xFFEAB308),
-            modifier = Modifier.weight(1f)
-        )
-        StatPill(
-            icon = Icons.AutoMirrored.Filled.FormatListBulleted,
-            label = "Total",
-            value = "${summary?.completedDays ?: 0}",
-            color = AccentTask,
+            color = NeoYellow,
             modifier = Modifier.weight(1f)
         )
     }
@@ -375,18 +464,28 @@ fun HabitStatsRow(summary: HabitSummary?) {
 
 @Composable
 fun StatPill(icon: ImageVector, label: String, value: String, color: Color, modifier: Modifier) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(DarkSurface)
-            .border(1.dp, BorderGlass, RoundedCornerShape(20.dp))
-            .padding(12.dp)
+    NeoCard(
+        modifier = modifier,
+        backgroundColor = Color.White,
+        borderColor = Color.Black,
+        shadowColor = Color.Black,
+        shadowOffset = 3.dp,
+        cornerRadius = 10.dp,
+        contentPadding = 12.dp
     ) {
         Column {
-            Icon(icon, null, tint = color, modifier = Modifier.size(16.dp))
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(label, style = Typography.labelSmall.copy(color = TextSecondary, fontSize = 9.sp))
-            Text(value, style = Typography.bodyMedium.copy(fontWeight = FontWeight.Black))
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .background(color, RoundedCornerShape(6.dp))
+                    .border(1.dp, Color.Black, RoundedCornerShape(6.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, null, tint = Color.Black, modifier = Modifier.size(14.dp))
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(label, style = Typography.labelSmall.copy(color = NeoTextSecondary, fontSize = 9.sp))
+            Text(value, style = Typography.bodyMedium.copy(fontWeight = FontWeight.Black, color = Color.Black))
         }
     }
 }
@@ -396,52 +495,57 @@ fun TodayCompactProgressCard(completed: Int, total: Int) {
     val progress = if (total > 0) completed.toFloat() / total else 0f
     val animatedProgress by animateFloatAsState(progress, label = "progress")
 
-    Card(
+    NeoCard(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 12.dp),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = DarkSurface),
-        border = BorderStroke(1.dp, BorderGlass)
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        backgroundColor = Color.White,
+        borderColor = Color.Black,
+        shadowColor = Color.Black,
+        shadowOffset = 4.dp,
+        cornerRadius = 12.dp
     ) {
         Row(
-            modifier = Modifier.padding(20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(
                     progress = { 1f },
-                    modifier = Modifier.size(64.dp),
-                    color = BorderGlass,
+                    modifier = Modifier.size(56.dp),
+                    color = Color(0xFFEEEEEE),
                     strokeWidth = 6.dp
                 )
                 CircularProgressIndicator(
                     progress = { animatedProgress },
-                    modifier = Modifier.size(64.dp),
-                    color = IncomeGreen,
+                    modifier = Modifier.size(56.dp),
+                    color = NeoGreen,
                     strokeWidth = 6.dp,
                     strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                 )
                 Text(
                     "${(progress * 100).toInt()}%",
-                    style = Typography.labelMedium.copy(fontWeight = FontWeight.Black)
+                    style = Typography.labelMedium.copy(fontWeight = FontWeight.Black, color = Color.Black)
                 )
             }
             
-            Spacer(modifier = Modifier.width(20.dp))
+            Spacer(modifier = Modifier.width(16.dp))
             
             Column {
-                Text("Today's Progress", style = Typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                Text("Today's Progress", style = Typography.titleMedium.copy(fontWeight = FontWeight.Black, color = Color.Black))
                 Text(
                     "$completed of $total Habits Completed",
-                    style = Typography.bodySmall.copy(color = TextSecondary)
+                    style = Typography.bodySmall.copy(color = NeoTextSecondary)
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 LinearProgressIndicator(
                     progress = { animatedProgress },
-                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape),
-                    color = IncomeGreen,
-                    trackColor = BorderGlass
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .border(1.dp, Color.Black, RoundedCornerShape(3.dp))
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = NeoGreen,
+                    trackColor = Color(0xFFEEEEEE)
                 )
             }
         }
@@ -456,71 +560,64 @@ fun HabitPremiumLogItem(
 ) {
     val habitDetails = allHabits.find { it.id == item.habitId }
     val isDaily = habitDetails?.frequency?.equals("daily", ignoreCase = true) ?: true
-    val scale by animateFloatAsState(if (item.completed) 0.98f else 1f)
 
-    Card(
+    NeoCard(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 6.dp)
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clickable { onToggle() },
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (item.completed) IncomeGreen.copy(alpha = 0.05f) else DarkSurface
-        ),
-        border = BorderStroke(
-            1.dp, 
-            if (item.completed) IncomeGreen.copy(alpha = 0.2f) else BorderGlass
-        )
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        backgroundColor = if (item.completed) Color(0xFFE8F5E9) else Color.White,
+        borderColor = Color.Black,
+        shadowColor = Color.Black,
+        shadowOffset = 3.dp,
+        cornerRadius = 10.dp,
+        onClick = onToggle,
+        contentPadding = 12.dp
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Interactive Checkbox
             Box(
                 modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (item.completed) IncomeGreen else Color.Transparent)
-                    .border(2.dp, if (item.completed) IncomeGreen else TextSecondary.copy(alpha = 0.3f), RoundedCornerShape(8.dp)),
+                    .size(26.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (item.completed) NeoGreen else Color.White)
+                    .border(2.dp, Color.Black, RoundedCornerShape(6.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 if (item.completed) {
-                    Icon(Icons.Default.Check, null, tint = DarkBg, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Check, null, tint = Color.Black, modifier = Modifier.size(16.dp))
                 }
             }
             
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(14.dp))
             
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = item.name,
                     style = Typography.bodyLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        textDecoration = if (item.completed) TextDecoration.LineThrough else TextDecoration.None
-                    ),
-                    color = if (item.completed) TextSecondary else TextPrimary
+                        fontWeight = FontWeight.Black,
+                        textDecoration = if (item.completed) TextDecoration.LineThrough else TextDecoration.None,
+                        color = Color.Black
+                    )
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = if (isDaily) "Daily" else "Weekly",
-                        style = Typography.labelSmall.copy(color = TextSecondary, fontSize = 10.sp)
+                        style = Typography.labelSmall.copy(color = NeoTextSecondary, fontSize = 10.sp)
                     )
                     if (habitDetails?.reminderEnabled == true && habitDetails.reminderTime != null) {
                         Spacer(Modifier.width(8.dp))
-                        Icon(Icons.Outlined.Notifications, null, tint = AccentBlue, modifier = Modifier.size(10.dp))
+                        Icon(Icons.Outlined.Notifications, null, tint = Color.Black, modifier = Modifier.size(12.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text(habitDetails.reminderTime, style = Typography.labelSmall.copy(color = AccentBlue, fontSize = 10.sp))
+                        Text(habitDetails.reminderTime, style = Typography.labelSmall.copy(color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 10.sp))
                     }
                 }
             }
             
-            // Emoji / Streak Placeholder
-            if (!item.completed) {
-                Text("🔥", fontSize = 14.sp)
+            if (item.completed) {
+                NeoBadge(text = "DONE", containerColor = NeoGreen, contentColor = Color.Black)
             } else {
-                Icon(Icons.Default.CheckCircle, null, tint = IncomeGreen, modifier = Modifier.size(20.dp))
+                NeoBadge(text = "TODO", containerColor = NeoYellow, contentColor = Color.Black)
             }
         }
     }
@@ -528,26 +625,29 @@ fun HabitPremiumLogItem(
 
 @Composable
 fun HabitManagementCard(habit: HabitMini, onClick: () -> Unit, onDelete: () -> Unit) {
-    Row(
+    NeoCard(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(DarkSurface)
-            .border(1.dp, BorderGlass, RoundedCornerShape(20.dp))
-            .clickable { onClick() }
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        backgroundColor = Color.White,
+        borderColor = Color.Black,
+        shadowColor = Color.Black,
+        shadowOffset = 3.dp,
+        cornerRadius = 10.dp,
+        onClick = onClick,
+        contentPadding = 12.dp
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(habit.name, style = Typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-            Text(
-                habit.frequency.replaceFirstChar { it.uppercase() },
-                style = Typography.labelSmall.copy(color = TextSecondary)
-            )
-        }
-        IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Default.DeleteOutline, null, tint = ExpenseRed.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(habit.name, style = Typography.bodyMedium.copy(fontWeight = FontWeight.Black, color = Color.Black))
+                Text(
+                    habit.frequency.replaceFirstChar { it.uppercase() },
+                    style = Typography.labelSmall.copy(color = NeoTextSecondary)
+                )
+            }
+            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.DeleteOutline, null, tint = NeoRed, modifier = Modifier.size(20.dp))
+            }
         }
     }
 }
@@ -557,12 +657,45 @@ fun SectionLabel(text: String) {
     Text(
         text = text,
         style = Typography.labelSmall.copy(
-            color = AccentBlue,
+            color = Color.Black,
             fontWeight = FontWeight.Black,
             letterSpacing = 1.5.sp
         ),
-        modifier = Modifier.padding(start = 24.dp, top = 24.dp, bottom = 12.dp)
+        modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 8.dp)
     )
+}
+
+@Composable
+fun EmptyStateView(icon: ImageVector, message: String) {
+    NeoCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        backgroundColor = Color.White,
+        borderColor = Color.Black,
+        shadowColor = Color.Black,
+        shadowOffset = 3.dp,
+        cornerRadius = 10.dp
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = Color.Black, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(12.dp))
+            Text(message, style = Typography.bodySmall.copy(color = NeoTextSecondary))
+        }
+    }
+}
+
+@Composable
+fun ErrorStateView(message: String) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = NeoRed, modifier = Modifier.size(48.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(message, color = NeoTextSecondary, textAlign = TextAlign.Center)
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -587,118 +720,74 @@ fun HabitFormDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = DarkSurface,
-        shape = RoundedCornerShape(28.dp),
-        modifier = Modifier.border(1.dp, BorderGlass, RoundedCornerShape(28.dp)),
+        containerColor = Color.White,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.border(2.5.dp, Color.Black, RoundedCornerShape(16.dp)),
         title = {
-            Text(title, style = Typography.headlineSmall.copy(fontWeight = FontWeight.Black))
+            Text(title, style = Typography.headlineSmall.copy(fontWeight = FontWeight.Black, color = Color.Black))
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    placeholder = { Text("What's the habit?") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentBlue,
-                        unfocusedBorderColor = BorderGlass,
-                        focusedContainerColor = DarkBg,
-                        unfocusedContainerColor = DarkBg
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Column {
+                    Text("HABIT NAME", style = Typography.labelSmall.copy(color = Color.Black, fontWeight = FontWeight.Black))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        placeholder = { Text("e.g. Read 10 pages", color = NeoTextSecondary.copy(alpha = 0.5f)) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(2.dp, Color.Black, RoundedCornerShape(10.dp)),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.Black,
+                            unfocusedTextColor = Color.Black,
+                            focusedBorderColor = Color.Black,
+                            unfocusedBorderColor = Color.Black,
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White
+                        )
                     )
-                )
-                
+                }
+
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(DarkBg)
-                        .padding(4.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     listOf("Daily", "Weekly").forEach { freq ->
-                        val active = frequency == freq
+                        val selected = frequency.equals(freq, ignoreCase = true)
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (active) AccentBlue else Color.Transparent)
+                                .background(if (selected) NeoYellow else Color.White, RoundedCornerShape(10.dp))
+                                .border(2.dp, Color.Black, RoundedCornerShape(10.dp))
                                 .clickable { frequency = freq }
-                                .padding(vertical = 10.dp),
+                                .padding(12.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(freq, color = if (active) DarkBg else TextSecondary, fontWeight = FontWeight.Bold)
+                            Text(freq, style = Typography.labelLarge.copy(color = Color.Black, fontWeight = FontWeight.Black))
                         }
-                    }
-                }
-
-                if (frequency == "Weekly") {
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEach { day ->
-                            val isSelected = selectedDays.contains(day)
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { selectedDays = if (isSelected) selectedDays - day else selectedDays + day },
-                                label = { Text(day) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = AccentBlue,
-                                    selectedLabelColor = DarkBg
-                                )
-                            )
-                        }
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = reminderEnabled, onCheckedChange = { reminderEnabled = it })
-                    Text("Reminder")
-                    Spacer(Modifier.weight(1f))
-                    if (reminderEnabled) {
-                        Text(
-                            reminderTime, 
-                            Modifier.clickable {
-                                val parts = reminderTime.split(":")
-                                android.app.TimePickerDialog(context, { _, h, m ->
-                                    reminderTime = String.format("%02d:%02d", h, m)
-                                }, parts[0].toInt(), parts[1].toInt(), true).show()
-                            },
-                            color = AccentBlue,
-                            fontWeight = FontWeight.Bold
-                        )
                     }
                 }
             }
         },
         confirmButton = {
-            Button(
-                onClick = { if (name.isNotBlank()) onConfirm(name, frequency, selectedDays.toList(), reminderTime, reminderEnabled) },
-                colors = ButtonDefaults.buttonColors(containerColor = AccentBlue, contentColor = DarkBg)
+            NeoButton(
+                onClick = { if (name.isNotBlank()) onConfirm(name, frequency.lowercase(), if (frequency.equals("weekly", ignoreCase = true)) selectedDays.toList() else null, reminderTime, reminderEnabled) },
+                containerColor = NeoYellow,
+                contentColor = Color.Black,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Confirm", fontWeight = FontWeight.Black)
+                Text("Save Habit", fontWeight = FontWeight.Black, color = Color.Black)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                Text("Cancel", color = NeoTextSecondary, fontWeight = FontWeight.Bold)
             }
         }
     )
-}
-
-@Composable
-fun EmptyStateView(icon: ImageVector, message: String) {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 60.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(icon, null, tint = BorderGlass, modifier = Modifier.size(80.dp))
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(message, color = TextSecondary, textAlign = TextAlign.Center)
-    }
-}
-
-@Composable
-fun ErrorStateView(message: String) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(message, color = ExpenseRed)
-    }
 }

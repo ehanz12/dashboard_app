@@ -21,6 +21,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.reihan.dashboard.ui.components.StatusPopup
+import com.reihan.dashboard.ui.components.dotGridBackground
 import com.reihan.dashboard.ui.theme.*
 
 @Composable
@@ -36,7 +37,8 @@ fun VerificationScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkBg)
+            .dotGridBackground()
+            .background(NeoBg)
     ) {
         // Subtle background glow
         Box(

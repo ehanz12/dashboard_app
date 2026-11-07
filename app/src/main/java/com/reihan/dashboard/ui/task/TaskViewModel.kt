@@ -99,11 +99,29 @@ class TaskViewModel : ViewModel() {
     }
 
     fun toggleTask(id: String, onFailure: (String) -> Unit = {}) {
+        val currentState = _state.value
+        // Optimistic toggle: find task across quadrants and flip isCompleted
+        if (currentState is TaskState.Success) {
+            val allLists = listOf(currentState.q1, currentState.q2, currentState.q3, currentState.q4)
+            val updated = allLists.map { list ->
+                list.map { task ->
+                    if (task.id == id) task.copy(isCompleted = !task.isCompleted) else task
+                }
+            }
+            _state.value = TaskState.Success(
+                q1 = updated[0],
+                q2 = updated[1],
+                q3 = updated[2],
+                q4 = updated[3]
+            )
+        }
+
         viewModelScope.launch {
             try {
                 RetrofitClient.apiService.toggleTaskStatus(id)
-                loadTasks()
             } catch (e: Exception) {
+                // Revert on failure
+                loadTasks()
                 onFailure(e.localizedMessage ?: "Failed to toggle task status")
             }
         }

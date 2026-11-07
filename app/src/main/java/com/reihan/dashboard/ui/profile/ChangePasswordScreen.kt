@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.reihan.dashboard.ui.components.StatusPopup
+import com.reihan.dashboard.ui.components.dotGridBackground
 import com.reihan.dashboard.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -31,7 +32,8 @@ fun ChangePasswordScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkBg)
+            .dotGridBackground()
+            .background(NeoBg)
             .padding(24.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

@@ -13,7 +13,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -25,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -42,8 +42,7 @@ import com.reihan.dashboard.ui.auth.ForgotPasswordScreen
 import com.reihan.dashboard.ui.auth.ResetPasswordScreen
 import com.reihan.dashboard.ui.analytics.AnalyticsScreen
 import com.reihan.dashboard.ui.analytics.AnalyticsViewModel
-import com.reihan.dashboard.ui.calendar.CalendarScreen
-import com.reihan.dashboard.ui.calendar.CalendarViewModel
+import com.reihan.dashboard.ui.components.dotGridBackground
 import com.reihan.dashboard.ui.habit.HabitScreen
 import com.reihan.dashboard.ui.habit.HabitViewModel
 import com.reihan.dashboard.ui.home.HomeScreen
@@ -64,8 +63,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             DashboardTheme {
                 Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = DarkBg
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .dotGridBackground(),
+                    color = NeoBg
                 ) {
                     AppNavigation()
                 }
@@ -74,7 +75,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Bottom nav destinations
+// Bottom nav destinations (Neobrutalism Style)
 data class BottomNavItem(
     val route: String,
     val icon: ImageVector,
@@ -83,10 +84,10 @@ data class BottomNavItem(
 )
 
 val bottomNavItems = listOf(
-    BottomNavItem("home", Icons.Default.Dashboard, "Home", AccentBlue),
-    BottomNavItem("analytics", Icons.Default.Analytics, "Analytics", AccentBlue),
-    BottomNavItem("calendar", Icons.Default.CalendarMonth, "Calendar", AccentBlue),
-    BottomNavItem("tasks", Icons.Default.CheckCircleOutline, "Tasks", AccentTask)
+    BottomNavItem("home", Icons.Default.Dashboard, "Home", NeoYellow),
+    BottomNavItem("analytics", Icons.Default.Analytics, "Analytics", NeoCyan),
+    BottomNavItem("habits", Icons.Default.Checklist, "Habits", NeoGreen),
+    BottomNavItem("tasks", Icons.Default.AssignmentTurnedIn, "Tasks", NeoPink)
 )
 
 @Composable
@@ -102,7 +103,7 @@ fun AppNavigation() {
     ) { _ -> }
 
     LaunchedEffect(Unit) {
-        if (android.os.Build.VERSION.SDK_INT >= 33) { // Android 13 (Tiramisu)
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
             permissionLauncher.launch("android.permission.POST_NOTIFICATIONS")
         }
     }
@@ -130,33 +131,37 @@ fun AppNavigation() {
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        val account = GoogleSignInHelper.handleSignInResult(result)
-        if (account != null) {
+        val signResult = GoogleSignInHelper.handleSignInResult(result)
+        signResult.onSuccess { account ->
             val idToken = GoogleSignInHelper.getIdToken(account)
             val userInfo = GoogleSignInHelper.getUserInfo(account)
             
-            // Pass the idToken to the AuthViewModel through SavedStateHandle
-            if (idToken != null) {
+            if (!idToken.isNullOrBlank()) {
                 navController.currentBackStackEntry
                     ?.savedStateHandle
                     ?.set("idToken", idToken)
                 navController.currentBackStackEntry
                     ?.savedStateHandle
                     ?.set("userName", userInfo?.first)
+            } else {
+                authViewModel.setError("ID Token Google kosong. Pastikan Web Client ID sudah sesuai di Google Cloud Console.")
             }
+        }.onFailure { exception ->
+            authViewModel.setError(exception.localizedMessage ?: "Google Sign-In gagal.")
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .dotGridBackground()
+    ) {
         NavHost(
             navController = navController,
             startDestination = startDestination,
             modifier = Modifier.fillMaxSize()
         ) {
             composable("auth") {
-                // Use the authViewModel from AppNavigation scope
-                
-                // Observe Google Sign-In result from savedStateHandle
                 val idTokenState = navController.currentBackStackEntry
                     ?.savedStateHandle
                     ?.getStateFlow<String?>("idToken", null)
@@ -166,7 +171,7 @@ fun AppNavigation() {
                     val idToken = idTokenState?.value
                     if (!idToken.isNullOrBlank()) {
                         authViewModel.googleLogin(idToken) {
-                            authViewModel.syncFmcToken() // Sync token after Google login
+                            authViewModel.syncFmcToken()
                             navController.navigate("home") {
                                 popUpTo("auth") { inclusive = true }
                             }
@@ -178,7 +183,7 @@ fun AppNavigation() {
                 AuthScreen(
                     viewModel = authViewModel,
                     onAuthSuccess = {
-                        authViewModel.syncFmcToken() // Sync token after login
+                        authViewModel.syncFmcToken()
                         navController.navigate("home") {
                             popUpTo("auth") { inclusive = true }
                         }
@@ -228,7 +233,7 @@ fun AppNavigation() {
                     viewModel = authViewModel,
                     onVerificationSuccess = {
                         if (SessionManager.hasToken()) {
-                            authViewModel.syncFmcToken() // Sync token after verification
+                            authViewModel.syncFmcToken()
                             navController.navigate("home") {
                                 popUpTo("auth") { inclusive = true }
                             }
@@ -257,21 +262,13 @@ fun AppNavigation() {
                     onNavigateToTransactions = { navController.navigate("transactions") },
                     onNavigateToCategories = { navController.navigate("categories") },
                     onNavigateToHabits = { navController.navigate("habits") },
-                    onNavigateToTasks = { navController.navigate("tasks") },
-                    onNavigateToCalendar = { navController.navigate("calendar") }
+                    onNavigateToTasks = { navController.navigate("tasks") }
                 )
             }
             composable("analytics") {
                 val analyticsViewModel: AnalyticsViewModel = viewModel()
                 AnalyticsScreen(
                     viewModel = analyticsViewModel,
-                    onBack = { navController.popBackStack() }
-                )
-            }
-            composable("calendar") {
-                val calendarViewModel: CalendarViewModel = viewModel()
-                CalendarScreen(
-                    viewModel = calendarViewModel,
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -316,31 +313,40 @@ fun AppNavigation() {
             }
         }
 
-        // Bottom Navigation Bar
+        // Bottom Navigation Bar (Neobrutalism Style with Hard Shadow and Thick Borders)
         AnimatedVisibility(
             visible = showBottomNav,
             modifier = Modifier.align(Alignment.BottomCenter),
             enter = fadeIn(),
             exit = fadeOut()
         ) {
-            PremiumBottomNav(navController = navController, currentRoute = currentRoute)
+            NeobrutalBottomNav(navController = navController, currentRoute = currentRoute)
         }
     }
 }
 
 @Composable
-fun PremiumBottomNav(navController: NavController, currentRoute: String?) {
+fun NeobrutalBottomNav(navController: NavController, currentRoute: String?) {
+    val shape = RoundedCornerShape(16.dp)
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 16.dp)
-            .clip(RoundedCornerShape(24.dp))
-            .background(DarkSurface)
-            .border(1.dp, BorderGlass, RoundedCornerShape(24.dp))
-            .padding(horizontal = 8.dp, vertical = 8.dp)
+            .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
+        // Shadow offset
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .offset(x = 4.dp, y = 4.dp)
+                .background(Color.Black, shape)
+        )
+        // Main bottom nav container
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(NeoCardSurface, shape)
+                .border(2.5.dp, Color.Black, shape)
+                .padding(horizontal = 8.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -348,10 +354,13 @@ fun PremiumBottomNav(navController: NavController, currentRoute: String?) {
                 val isSelected = currentRoute == item.route
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(
-                            if (isSelected) item.accentColor.copy(alpha = 0.12f)
-                            else Color.Transparent
+                        .clip(RoundedCornerShape(12.dp))
+                        .then(
+                            if (isSelected) {
+                                Modifier
+                                    .background(item.accentColor, RoundedCornerShape(12.dp))
+                                    .border(2.dp, Color.Black, RoundedCornerShape(12.dp))
+                            } else Modifier
                         )
                         .clickable {
                             if (!isSelected) {
@@ -362,24 +371,27 @@ fun PremiumBottomNav(navController: NavController, currentRoute: String?) {
                                 }
                             }
                         }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
                         Icon(
                             imageVector = item.icon,
                             contentDescription = item.label,
-                            tint = if (isSelected) item.accentColor else TextSecondary.copy(alpha = 0.5f),
+                            tint = if (isSelected) Color.Black else NeoTextSecondary,
                             modifier = Modifier.size(20.dp)
                         )
                         if (isSelected) {
-                            Spacer(modifier = Modifier.height(3.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = item.label,
                                 style = Typography.labelLarge.copy(
-                                    color = item.accentColor,
-                                    fontSize = 9.sp,
-                                    letterSpacing = 0.5.sp
+                                    color = Color.Black,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Black
                                 )
                             )
                         }

@@ -181,12 +181,46 @@ class HabitViewModel : ViewModel() {
     }
 
     fun toggleHabitToday(habitId: String, onFailure: (String) -> Unit = {}) {
+        val currentState = _state.value
+        // 1. Optimistic Update immediately on UI thread
+        if (currentState is HabitState.Success) {
+            val targetHabit = currentState.habitsToday.find { it.habitId == habitId }
+            if (targetHabit != null) {
+                val newStatus = !targetHabit.completed
+                val updatedTodayLogs = currentState.habitsToday.map {
+                    if (it.habitId == habitId) it.copy(completed = newStatus) else it
+                }
+                val delta = if (newStatus) 1 else -1
+                val updatedSummary = currentState.summary?.let { s ->
+                    val newCompleted = (s.completedToday + delta).coerceIn(0, s.totalToday)
+                    val newRate = if (s.totalToday > 0) ((newCompleted.toDouble() / s.totalToday) * 100).toInt() else 0
+                    s.copy(completedToday = newCompleted, completionRate = newRate)
+                }
+                cachedTodayLogs = updatedTodayLogs
+                cachedSummary = updatedSummary
+                _state.value = currentState.copy(
+                    habitsToday = updatedTodayLogs,
+                    summary = updatedSummary
+                )
+            }
+        }
+
+        // 2. Network call in background
         viewModelScope.launch {
             try {
                 RetrofitClient.apiService.toggleHabitLog(ToggleHabitLogRequest(habitId))
-                loadHabitData(isRefresh = true)
+                // Refresh silently in background to keep data in sync with server
+                val logsRes = RetrofitClient.apiService.getHabitLogsToday()
+                val updatedLogs = logsRes.data ?: emptyList()
+                cachedTodayLogs = updatedLogs
+                val current = _state.value
+                if (current is HabitState.Success) {
+                    _state.value = current.copy(habitsToday = updatedLogs)
+                }
             } catch (e: Exception) {
-                onFailure(e.localizedMessage ?: "Failed to toggle habit")
+                // Revert on failure by refreshing from server
+                loadHabitData(isRefresh = true)
+                onFailure(e.localizedMessage ?: "Gagal memperbarui status habit")
             }
         }
     }

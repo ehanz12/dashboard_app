@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.reihan.dashboard.data.model.ResetPasswordRequest
 import com.reihan.dashboard.ui.components.StatusPopup
+import com.reihan.dashboard.ui.components.dotGridBackground
 import com.reihan.dashboard.ui.theme.*
 
 @Composable
@@ -34,7 +35,7 @@ fun ForgotPasswordScreen(
     var email by remember { mutableStateOf("") }
     val authState by viewModel.authState.collectAsState()
 
-    Box(modifier = Modifier.fillMaxSize().background(DarkBg)) {
+    Box(modifier = Modifier.fillMaxSize().dotGridBackground().background(NeoBg)) {
         Column(
             modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

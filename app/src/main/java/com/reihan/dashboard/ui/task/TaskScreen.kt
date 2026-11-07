@@ -34,8 +34,19 @@ import androidx.compose.ui.platform.LocalContext
 import java.util.Calendar
 import com.reihan.dashboard.data.model.TaskResponse
 import com.reihan.dashboard.ui.components.DeleteConfirmationDialog
+import com.reihan.dashboard.ui.components.NeoBadge
+import com.reihan.dashboard.ui.components.NeoButton
+import com.reihan.dashboard.ui.components.NeoCard
+import android.app.Activity
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.reihan.dashboard.ui.components.StatusPopup
+import com.reihan.dashboard.ui.components.dotGridBackground
 import com.reihan.dashboard.ui.theme.*
+import com.reihan.dashboard.util.VoiceActionProcessor
+import com.reihan.dashboard.util.VoiceActionResult
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,32 +61,107 @@ fun TaskScreen(
     var statusPopup by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
     var deleteConfirmId by remember { mutableStateOf<String?>(null) }
 
+    // Speech Recognizer Activity Launcher for Tasks
+    val speechLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val spokenText = matches?.firstOrNull()
+            if (!spokenText.isNullOrBlank() && state is TaskState.Success) {
+                val succ = state as TaskState.Success
+                val allTasks = succ.q1 + succ.q2 + succ.q3 + succ.q4
+                val actionResult = VoiceActionProcessor.processSpeech(
+                    spokenText = spokenText,
+                    habitsToday = emptyList(),
+                    allHabits = emptyList(),
+                    allTasks = allTasks,
+                    categories = emptyList()
+                )
+                when (actionResult) {
+                    is VoiceActionResult.TaskCompleted -> {
+                        viewModel.toggleTask(actionResult.taskId) { err ->
+                            statusPopup = false to err
+                        }
+                        statusPopup = true to "Berhasil menyelesaikan Task \"${actionResult.taskTitle}\"! ✅"
+                    }
+                    is VoiceActionResult.NoMatch -> {
+                        statusPopup = false to actionResult.reason
+                    }
+                    else -> {
+                        statusPopup = false to "Tidak menemukan task yang sesuai dengan \"$spokenText\"."
+                    }
+                }
+            }
+        }
+    }
+
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "id-ID")
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Bicara task Anda (contoh: 'sudah kerjakan laporan')")
+            }
+            speechLauncher.launch(intent)
+        } else {
+            statusPopup = false to "Izin mikrofon dibutuhkan untuk menyelesaikan task lewat suara."
+        }
+    }
+
+    fun startVoiceInput() {
+        audioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+    }
+
     LaunchedEffect(Unit) {
         viewModel.loadTasks()
     }
 
     Scaffold(
-        containerColor = DarkBg,
+        containerColor = NeoBg,
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showDialog = true },
-                containerColor = AccentTask,
-                contentColor = DarkBg,
-                shape = RoundedCornerShape(20.dp),
-                modifier = Modifier.padding(bottom = 96.dp, end = 16.dp),
-                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 12.dp),
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("New Task", fontWeight = FontWeight.Black) }
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 96.dp, end = 16.dp)
+            ) {
+                FloatingActionButton(
+                    onClick = { startVoiceInput() },
+                    containerColor = NeoYellow,
+                    contentColor = Color.Black,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.border(2.5.dp, Color.Black, RoundedCornerShape(12.dp)),
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 8.dp)
+                ) {
+                    Icon(Icons.Default.Mic, contentDescription = "Voice Task", tint = Color.Black)
+                }
+                ExtendedFloatingActionButton(
+                    onClick = { showDialog = true },
+                    containerColor = NeoCyan,
+                    contentColor = Color.Black,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.border(2.5.dp, Color.Black, RoundedCornerShape(12.dp)),
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 8.dp),
+                    icon = { Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black) },
+                    text = { Text("New Task", fontWeight = FontWeight.Black, color = Color.Black) }
+                )
+            }
         }
     ) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .padding(paddingValues)
+                .fillMaxSize()
+                .dotGridBackground()
+        ) {
             TaskTopBar(onBack = onBack)
 
             when (val s = state) {
                 is TaskState.Loading -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = AccentTask, strokeWidth = 2.dp)
+                        CircularProgressIndicator(color = Color.Black, strokeWidth = 3.dp)
                     }
                 }
                 is TaskState.Error -> {
@@ -84,14 +170,14 @@ fun TaskScreen(
                 is TaskState.Success -> {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 100.dp),
-                        verticalArrangement = Arrangement.spacedBy(24.dp)
+                        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 120.dp),
+                        verticalArrangement = Arrangement.spacedBy(20.dp)
                     ) {
                         item {
                             QuadrantSection(
                                 title = "Do First",
                                 subtitle = "Urgent & Important",
-                                color = QuadrantQ1,
+                                color = NeoRed,
                                 tasks = s.q1,
                                 viewModel = viewModel,
                                 onClickTask = { editingTask = it },
@@ -106,7 +192,7 @@ fun TaskScreen(
                             QuadrantSection(
                                 title = "Schedule",
                                 subtitle = "Important but Not Urgent",
-                                color = QuadrantQ2,
+                                color = NeoBlue,
                                 tasks = s.q2,
                                 viewModel = viewModel,
                                 onClickTask = { editingTask = it },
@@ -121,7 +207,7 @@ fun TaskScreen(
                             QuadrantSection(
                                 title = "Delegate",
                                 subtitle = "Urgent but Not Important",
-                                color = QuadrantQ3,
+                                color = NeoOrange,
                                 tasks = s.q3,
                                 viewModel = viewModel,
                                 onClickTask = { editingTask = it },
@@ -136,7 +222,7 @@ fun TaskScreen(
                             QuadrantSection(
                                 title = "Eliminate",
                                 subtitle = "Neither Urgent nor Important",
-                                color = QuadrantQ4,
+                                color = NeoTextSecondary,
                                 tasks = s.q4,
                                 viewModel = viewModel,
                                 onClickTask = { editingTask = it },
@@ -226,24 +312,36 @@ fun TaskTopBar(onBack: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, top = 36.dp, bottom = 24.dp),
+            .padding(start = 20.dp, end = 20.dp, top = 28.dp, bottom = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        IconButton(
-            onClick = onBack,
+        Box(
             modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(DarkSurface)
-                .border(1.dp, BorderGlass, CircleShape)
+                .size(42.dp)
+                .clickable { onBack() }
         ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary, modifier = Modifier.size(18.dp))
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .offset(x = 3.dp, y = 3.dp)
+                    .background(Color.Black, RoundedCornerShape(10.dp))
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White, RoundedCornerShape(10.dp))
+                    .border(2.dp, Color.Black, RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.Black, modifier = Modifier.size(20.dp))
+            }
         }
         
         Column(horizontalAlignment = Alignment.End) {
-            Text("Eisenhower Matrix", style = Typography.labelSmall.copy(color = AccentTask, fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
-            Text("Focus & Tasks", style = Typography.titleLarge.copy(fontWeight = FontWeight.Black))
+            NeoBadge(text = "Eisenhower Matrix", containerColor = NeoYellow, contentColor = Color.Black)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("Focus & Tasks", style = Typography.titleLarge.copy(fontWeight = FontWeight.Black, color = Color.Black))
         }
     }
 }
@@ -261,35 +359,36 @@ fun QuadrantSection(
 ) {
     Column {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(color))
-                Spacer(modifier = Modifier.width(12.dp))
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .background(color, CircleShape)
+                        .border(1.5.dp, Color.Black, CircleShape)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
                 Column {
-                    Text(title, style = Typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                    Text(subtitle, style = Typography.labelSmall.copy(color = TextSecondary))
+                    Text(title, style = Typography.titleMedium.copy(fontWeight = FontWeight.Black, color = Color.Black))
+                    Text(subtitle, style = Typography.labelSmall.copy(color = NeoTextSecondary))
                 }
             }
-            Text(
-                text = "${tasks.size} tasks",
-                style = Typography.labelSmall.copy(color = color.copy(alpha = 0.8f), fontWeight = FontWeight.Bold)
-            )
+            NeoBadge(text = "${tasks.size} tasks", containerColor = color, contentColor = if (color == NeoRed) Color.White else Color.Black)
         }
 
         if (tasks.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(DarkSurface)
-                    .border(1.dp, BorderGlass, RoundedCornerShape(16.dp))
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center
+            NeoCard(
+                modifier = Modifier.fillMaxWidth(),
+                backgroundColor = Color.White,
+                borderColor = Color.Black,
+                shadowColor = Color.Black,
+                shadowOffset = 3.dp,
+                cornerRadius = 10.dp
             ) {
-                Text("No tasks in this quadrant", style = Typography.bodySmall.copy(color = TextSecondary.copy(alpha = 0.5f)))
+                Text("No tasks in this quadrant", style = Typography.bodySmall.copy(color = NeoTextSecondary, fontWeight = FontWeight.Bold))
             }
         } else {
             tasks.forEach { task ->
@@ -325,55 +424,60 @@ fun ModernTaskItem(
 ) {
     val isCompleted = task.isCompleted
     
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (isCompleted) DarkSurface.copy(alpha = 0.5f) else DarkSurface)
-            .border(1.dp, if (isCompleted) BorderGlass.copy(alpha = 0.3f) else BorderGlass, RoundedCornerShape(16.dp))
-            .clickable { onClick() }
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
+    NeoCard(
+        modifier = Modifier.fillMaxWidth(),
+        backgroundColor = if (isCompleted) Color(0xFFF0F0F0) else Color.White,
+        borderColor = Color.Black,
+        shadowColor = Color.Black,
+        shadowOffset = 3.dp,
+        cornerRadius = 10.dp,
+        onClick = onClick,
+        contentPadding = 12.dp
     ) {
-        Box(
-            modifier = Modifier
-                .size(24.dp)
-                .clip(CircleShape)
-                .background(if (isCompleted) accentColor else Color.Transparent)
-                .border(2.dp, if (isCompleted) accentColor else TextSecondary.copy(alpha = 0.3f), CircleShape)
-                .clickable { onToggle() },
-            contentAlignment = Alignment.Center
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            if (isCompleted) {
-                Icon(Icons.Default.Check, contentDescription = null, tint = DarkBg, modifier = Modifier.size(14.dp))
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(if (isCompleted) accentColor else Color.White)
+                    .border(2.dp, Color.Black, CircleShape)
+                    .clickable { onToggle() },
+                contentAlignment = Alignment.Center
+            ) {
+                if (isCompleted) {
+                    Icon(Icons.Default.Check, contentDescription = null, tint = if (accentColor == NeoRed) Color.White else Color.Black, modifier = Modifier.size(14.dp))
+                }
             }
-        }
-        
-        Spacer(modifier = Modifier.width(16.dp))
-        
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = task.title,
-                style = Typography.bodyLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
-                ),
-                color = if (isCompleted) TextSecondary else TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (task.description.isNotBlank()) {
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = task.description,
-                    style = Typography.bodySmall.copy(color = TextSecondary.copy(alpha = 0.7f)),
+                    text = task.title,
+                    style = Typography.bodyLarge.copy(
+                        fontWeight = FontWeight.Black,
+                        textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                        color = Color.Black
+                    ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (task.description.isNotBlank()) {
+                    Text(
+                        text = task.description,
+                        style = Typography.bodySmall.copy(color = NeoTextSecondary),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
-        }
-        
-        IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = ExpenseRed.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
+
+            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = NeoRed, modifier = Modifier.size(20.dp))
+            }
         }
     }
 }
@@ -391,21 +495,21 @@ fun TaskFormDialog(
     var dueDate by remember { mutableStateOf<String?>(task?.dueDate?.take(10)) }
 
     val quadrants = listOf(
-        1 to "Do First" to QuadrantQ1,
-        2 to "Schedule" to QuadrantQ2,
-        3 to "Delegate" to QuadrantQ3,
-        4 to "Eliminate" to QuadrantQ4
+        1 to "Do First" to NeoRed,
+        2 to "Schedule" to NeoBlue,
+        3 to "Delegate" to NeoOrange,
+        4 to "Eliminate" to NeoTextSecondary
     )
 
     val context = LocalContext.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = DarkSurface,
-        shape = RoundedCornerShape(28.dp),
-        modifier = Modifier.border(1.dp, BorderGlass, RoundedCornerShape(28.dp)),
+        containerColor = Color.White,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.border(2.5.dp, Color.Black, RoundedCornerShape(16.dp)),
         title = {
-            Text(if (task == null) "Create Task" else "Edit Task", style = Typography.headlineSmall.copy(fontWeight = FontWeight.Black))
+            Text(if (task == null) "Create Task" else "Edit Task", style = Typography.headlineSmall.copy(fontWeight = FontWeight.Black, color = Color.Black))
         },
         text = {
             Column(
@@ -415,72 +519,78 @@ fun TaskFormDialog(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Column {
-                    Text("TITLE", style = Typography.labelSmall.copy(color = AccentTask, fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("TITLE", style = Typography.labelSmall.copy(color = Color.Black, fontWeight = FontWeight.Black))
+                    Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = title,
                         onValueChange = { title = it },
-                        placeholder = { Text("What needs to be done?", color = TextSecondary.copy(alpha = 0.5f)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
+                        placeholder = { Text("What needs to be done?", color = NeoTextSecondary.copy(alpha = 0.5f)) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(2.dp, Color.Black, RoundedCornerShape(10.dp)),
+                        shape = RoundedCornerShape(10.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = AccentTask,
-                            unfocusedBorderColor = BorderGlass,
-                            focusedContainerColor = DarkBg,
-                            unfocusedContainerColor = DarkBg
+                            focusedTextColor = Color.Black,
+                            unfocusedTextColor = Color.Black,
+                            focusedBorderColor = Color.Black,
+                            unfocusedBorderColor = Color.Black,
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White
                         )
                     )
                 }
 
                 Column {
-                    Text("DESCRIPTION", style = Typography.labelSmall.copy(color = AccentTask, fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("DESCRIPTION", style = Typography.labelSmall.copy(color = Color.Black, fontWeight = FontWeight.Black))
+                    Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = desc,
                         onValueChange = { desc = it },
-                        placeholder = { Text("Add details/notes...", color = TextSecondary.copy(alpha = 0.5f)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
+                        placeholder = { Text("Add details/notes...", color = NeoTextSecondary.copy(alpha = 0.5f)) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(2.dp, Color.Black, RoundedCornerShape(10.dp)),
+                        shape = RoundedCornerShape(10.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = AccentTask,
-                            unfocusedBorderColor = BorderGlass,
-                            focusedContainerColor = DarkBg,
-                            unfocusedContainerColor = DarkBg
+                            focusedTextColor = Color.Black,
+                            unfocusedTextColor = Color.Black,
+                            focusedBorderColor = Color.Black,
+                            unfocusedBorderColor = Color.Black,
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White
                         ),
                         maxLines = 3
                     )
                 }
 
                 Column {
-                    Text("DUE DATE", style = Typography.labelSmall.copy(color = AccentTask, fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("DUE DATE", style = Typography.labelSmall.copy(color = Color.Black, fontWeight = FontWeight.Black))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Box {
                         OutlinedTextField(
                             value = dueDate ?: "No due date",
                             onValueChange = {},
                             readOnly = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(2.dp, Color.Black, RoundedCornerShape(10.dp)),
+                            shape = RoundedCornerShape(10.dp),
                             trailingIcon = {
                                 if (dueDate != null) {
                                     IconButton(onClick = { dueDate = null }) {
-                                        Icon(Icons.Default.Clear, contentDescription = "Clear date", tint = ExpenseRed)
+                                        Icon(Icons.Default.Clear, contentDescription = "Clear date", tint = NeoRed)
                                     }
                                 } else {
-                                    Icon(Icons.Default.CalendarToday, null, tint = TextSecondary, modifier = Modifier.size(20.dp))
+                                    Icon(Icons.Default.CalendarToday, null, tint = Color.Black, modifier = Modifier.size(20.dp))
                                 }
                             },
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = if (dueDate != null) TextPrimary else TextSecondary,
-                                unfocusedTextColor = if (dueDate != null) TextPrimary else TextSecondary,
-                                focusedBorderColor = AccentTask,
-                                unfocusedBorderColor = BorderGlass,
-                                focusedContainerColor = DarkBg,
-                                unfocusedContainerColor = DarkBg
+                                focusedTextColor = Color.Black,
+                                unfocusedTextColor = Color.Black,
+                                focusedBorderColor = Color.Black,
+                                unfocusedBorderColor = Color.Black,
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White
                             )
                         )
                         Box(
@@ -507,8 +617,8 @@ fun TaskFormDialog(
                 }
 
                 Column {
-                    Text("QUADRANT", style = Typography.labelSmall.copy(color = AccentTask, fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("QUADRANT", style = Typography.labelSmall.copy(color = Color.Black, fontWeight = FontWeight.Black))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -520,21 +630,27 @@ fun TaskFormDialog(
                                 modifier = Modifier
                                     .weight(1f)
                                     .aspectRatio(1.2f)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(if (selected) color else DarkBg)
-                                    .border(1.dp, if (selected) color else BorderGlass, RoundedCornerShape(12.dp))
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (selected) color else Color.White)
+                                    .border(2.dp, Color.Black, RoundedCornerShape(10.dp))
                                     .clickable { selectedQuadrant = q }
                                     .padding(4.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(if (selected) DarkBg else color))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(if (selected) Color.White else color)
+                                            .border(1.dp, Color.Black, CircleShape)
+                                    )
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
                                         text = label.split(" ")[0],
                                         style = Typography.labelSmall.copy(
-                                            color = if (selected) DarkBg else TextSecondary,
-                                            fontWeight = FontWeight.Bold,
+                                            color = if (selected) (if (color == NeoRed) Color.White else Color.Black) else Color.Black,
+                                            fontWeight = FontWeight.Black,
                                             fontSize = 9.sp
                                         )
                                     )
@@ -546,18 +662,18 @@ fun TaskFormDialog(
             }
         },
         confirmButton = {
-            Button(
+            NeoButton(
                 onClick = { if (title.isNotBlank()) onConfirm(title, desc, selectedQuadrant, dueDate) },
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AccentTask, contentColor = DarkBg)
+                containerColor = NeoYellow,
+                contentColor = Color.Black,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (task == null) "Create Task" else "Save Changes", fontWeight = FontWeight.Black)
+                Text(if (task == null) "Create Task" else "Save Changes", fontWeight = FontWeight.Black, color = Color.Black)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                Text("Cancel", color = TextSecondary)
+                Text("Cancel", color = NeoTextSecondary, fontWeight = FontWeight.Bold)
             }
         }
     )
@@ -570,12 +686,12 @@ fun TaskErrorView(message: String, onRetry: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = ExpenseRed, modifier = Modifier.size(48.dp))
+        Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = NeoRed, modifier = Modifier.size(48.dp))
         Spacer(modifier = Modifier.height(16.dp))
-        Text(message, color = TextSecondary, textAlign = TextAlign.Center)
+        Text(message, color = NeoTextSecondary, textAlign = TextAlign.Center)
         Spacer(modifier = Modifier.height(24.dp))
-        Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = AccentTask)) {
-            Text("Retry", color = DarkBg)
+        NeoButton(onClick = onRetry, containerColor = NeoYellow) {
+            Text("Retry", color = Color.Black, fontWeight = FontWeight.Black)
         }
     }
 }

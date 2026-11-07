@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.reihan.dashboard.data.model.DashboardData
 import com.reihan.dashboard.data.repository.HomeRepository
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -23,19 +24,28 @@ class HomeViewModel : ViewModel() {
     private val _homeState = MutableStateFlow<HomeState>(HomeState.Loading)
     val homeState: StateFlow<HomeState> = _homeState
 
-    fun loadDashboardData() {
+    fun loadDashboardData(forceRefresh: Boolean = false) {
         viewModelScope.launch {
-            _homeState.value = HomeState.Loading
+            // Only set to Loading if we don't already have data to prevent screen flickering
+            if (_homeState.value !is HomeState.Success) {
+                _homeState.value = HomeState.Loading
+            }
             try {
-                val userRes = repository.getMe()
-                val dashboardRes = repository.getDashboard()
-                
+                // Fetch user info and dashboard data concurrently
+                val userDeferred = async { repository.getMe(forceRefresh) }
+                val dashboardDeferred = async { repository.getDashboard(forceRefresh) }
+
+                val userRes = userDeferred.await()
+                val dashboardRes = dashboardDeferred.await()
+
                 _homeState.value = HomeState.Success(
                     userName = userRes.data?.name ?: "User",
                     dashboardData = dashboardRes.data
                 )
             } catch (e: Exception) {
-                _homeState.value = HomeState.Error(e.localizedMessage ?: "Failed to load dashboard data")
+                if (_homeState.value !is HomeState.Success) {
+                    _homeState.value = HomeState.Error(e.localizedMessage ?: "Failed to load dashboard data")
+                }
             }
         }
     }

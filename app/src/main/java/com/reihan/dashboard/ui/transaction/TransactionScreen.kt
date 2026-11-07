@@ -1,6 +1,11 @@
 package com.reihan.dashboard.ui.transaction
 
+import android.app.Activity
 import android.app.DatePickerDialog
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -36,9 +41,16 @@ import androidx.compose.ui.unit.sp
 import com.reihan.dashboard.data.model.CategoryResponse
 import com.reihan.dashboard.data.model.TransactionResponse
 import com.reihan.dashboard.ui.components.DeleteConfirmationDialog
+import com.reihan.dashboard.ui.components.NeoBadge
+import com.reihan.dashboard.ui.components.NeoButton
+import com.reihan.dashboard.ui.components.NeoCard
 import com.reihan.dashboard.ui.components.StatusPopup
+import com.reihan.dashboard.ui.components.VoiceTransactionDialog
+import com.reihan.dashboard.ui.components.dotGridBackground
 import com.reihan.dashboard.ui.home.formatCurrency
 import com.reihan.dashboard.ui.theme.*
+import com.reihan.dashboard.util.ParsedVoiceTransaction
+import com.reihan.dashboard.util.VoiceTransactionParser
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -59,6 +71,44 @@ fun TransactionScreen(
     var editingTransaction by remember { mutableStateOf<TransactionResponse?>(null) }
     var statusPopup by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
     var deleteConfirmId by remember { mutableStateOf<String?>(null) }
+    var parsedVoiceTx by remember { mutableStateOf<ParsedVoiceTransaction?>(null) }
+
+    val context = LocalContext.current
+
+    // Speech Recognizer Activity Launcher
+    val speechLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val spokenText = matches?.firstOrNull()
+            if (!spokenText.isNullOrBlank() && state is TransactionState.Success) {
+                val categories = (state as TransactionState.Success).categories
+                val parsed = VoiceTransactionParser.parse(spokenText, categories)
+                parsedVoiceTx = parsed
+            }
+        }
+    }
+
+    // Audio Permission Launcher
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "id-ID")
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Bicara transaksi Anda (contoh: 'jajan 10000 kategori jajan harian')")
+            }
+            speechLauncher.launch(intent)
+        } else {
+            statusPopup = false to "Izin mikrofon dibutuhkan untuk menginput transaksi lewat suara."
+        }
+    }
+
+    fun startVoiceInput() {
+        audioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+    }
 
     LaunchedEffect(selectedType, selectedCategoryId, searchQuery, startDate, endDate) {
         viewModel.loadTransactionsAndCategories(
@@ -71,22 +121,43 @@ fun TransactionScreen(
     }
 
     Scaffold(
-        containerColor = DarkBg,
+        containerColor = NeoBg,
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showAddDialog = true },
-                containerColor = AccentBlue,
-                contentColor = DarkBg,
-                shape = RoundedCornerShape(20.dp),
-                modifier = Modifier.padding(bottom = 96.dp, end = 16.dp),
-                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 12.dp),
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("New Record", fontWeight = FontWeight.Black) }
-            )
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(bottom = 96.dp, end = 16.dp)
+            ) {
+                FloatingActionButton(
+                    onClick = { startVoiceInput() },
+                    containerColor = NeoCyan,
+                    contentColor = Color.Black,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.border(2.5.dp, Color.Black, RoundedCornerShape(12.dp)),
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 8.dp)
+                ) {
+                    Icon(Icons.Default.Mic, contentDescription = "Voice Input", tint = Color.Black)
+                }
+                ExtendedFloatingActionButton(
+                    onClick = { showAddDialog = true },
+                    containerColor = NeoYellow,
+                    contentColor = Color.Black,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.border(2.5.dp, Color.Black, RoundedCornerShape(12.dp)),
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 8.dp),
+                    icon = { Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black) },
+                    text = { Text("New Record", fontWeight = FontWeight.Black, color = Color.Black) }
+                )
+            }
         }
     ) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
-            TransactionTopBar(onBack = onBack)
+        Column(
+            modifier = Modifier
+                .padding(paddingValues)
+                .fillMaxSize()
+                .dotGridBackground()
+        ) {
+            TransactionTopBar(onBack = onBack, onVoiceClick = { startVoiceInput() })
 
             TransactionFilters(
                 searchQuery = searchQuery,
@@ -111,7 +182,7 @@ fun TransactionScreen(
                 when (val current = state) {
                     is TransactionState.Loading -> {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = AccentBlue, strokeWidth = 2.dp)
+                            CircularProgressIndicator(color = Color.Black, strokeWidth = 3.dp)
                         }
                     }
                     is TransactionState.Error -> {
@@ -123,8 +194,8 @@ fun TransactionScreen(
                         } else {
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 100.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 120.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 items(current.transactions) { transaction ->
                                     ModernTransactionItem(
@@ -141,6 +212,30 @@ fun TransactionScreen(
                 }
             }
         }
+    }
+
+    if (parsedVoiceTx != null && state is TransactionState.Success) {
+        VoiceTransactionDialog(
+            parsed = parsedVoiceTx!!,
+            categories = (state as TransactionState.Success).categories,
+            onDismiss = { parsedVoiceTx = null },
+            onConfirm = { catId, amt, type, desc, date ->
+                viewModel.addTransaction(
+                    categoryId = catId,
+                    amount = amt,
+                    type = type,
+                    description = desc,
+                    transactionDate = date,
+                    onSuccess = {
+                        parsedVoiceTx = null
+                        statusPopup = true to "Transaksi suara berhasil disimpan!"
+                    },
+                    onFailure = { err ->
+                        statusPopup = false to err
+                    }
+                )
+            }
+        )
     }
 
     if (showAddDialog && state is TransactionState.Success) {
@@ -217,28 +312,64 @@ fun TransactionScreen(
 }
 
 @Composable
-fun TransactionTopBar(onBack: () -> Unit) {
+fun TransactionTopBar(onBack: () -> Unit, onVoiceClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, top = 36.dp, bottom = 24.dp),
+            .padding(start = 20.dp, end = 20.dp, top = 28.dp, bottom = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(DarkSurface)
-                .border(1.dp, BorderGlass, CircleShape)
-        ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary, modifier = Modifier.size(18.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clickable { onBack() }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .offset(x = 3.dp, y = 3.dp)
+                        .background(Color.Black, RoundedCornerShape(10.dp))
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.White, RoundedCornerShape(10.dp))
+                        .border(2.dp, Color.Black, RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.Black, modifier = Modifier.size(20.dp))
+                }
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clickable { onVoiceClick() }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .offset(x = 3.dp, y = 3.dp)
+                        .background(Color.Black, RoundedCornerShape(10.dp))
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(NeoCyan, RoundedCornerShape(10.dp))
+                        .border(2.dp, Color.Black, RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Mic, contentDescription = "Voice Input", tint = Color.Black, modifier = Modifier.size(20.dp))
+                }
+            }
         }
         
         Column(horizontalAlignment = Alignment.End) {
-            Text("FINANCE", style = Typography.labelSmall.copy(color = AccentBlue, fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
-            Text("Transactions", style = Typography.titleLarge.copy(fontWeight = FontWeight.Black))
+            NeoBadge(text = "FINANCE", containerColor = NeoYellow, contentColor = Color.Black)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("Transactions", style = Typography.titleLarge.copy(fontWeight = FontWeight.Black, color = Color.Black))
         }
     }
 }
@@ -256,26 +387,28 @@ fun TransactionFilters(
 ) {
     val context = LocalContext.current
 
-    Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+    Column(modifier = Modifier.padding(horizontal = 20.dp)) {
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchChange,
-            placeholder = { Text("Search by description...", color = TextSecondary.copy(alpha = 0.5f), fontSize = 14.sp) },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondary.copy(alpha = 0.5f), modifier = Modifier.size(20.dp)) },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            placeholder = { Text("Search by description...", color = NeoTextSecondary.copy(alpha = 0.5f), fontSize = 14.sp) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Black, modifier = Modifier.size(20.dp)) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(2.dp, Color.Black, RoundedCornerShape(12.dp)),
+            shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = TextPrimary,
-                unfocusedTextColor = TextPrimary,
-                focusedBorderColor = AccentBlue,
-                unfocusedBorderColor = BorderGlass,
-                focusedContainerColor = DarkSurface,
-                unfocusedContainerColor = DarkSurface
+                focusedTextColor = Color.Black,
+                unfocusedTextColor = Color.Black,
+                focusedBorderColor = Color.Black,
+                unfocusedBorderColor = Color.Black,
+                focusedContainerColor = Color.White,
+                unfocusedContainerColor = Color.White
             ),
             singleLine = true
         )
         
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
         
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -285,27 +418,26 @@ fun TransactionFilters(
             Row(
                 modifier = Modifier
                     .weight(1.5f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(DarkSurface)
-                    .border(1.dp, BorderGlass, RoundedCornerShape(12.dp))
-                    .padding(4.dp)
+                    .background(Color.White, RoundedCornerShape(10.dp))
+                    .border(2.dp, Color.Black, RoundedCornerShape(10.dp))
+                    .padding(3.dp)
             ) {
                 listOf("All", "Income", "Expense").forEach { type ->
                     val active = selectedType == type
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (active) AccentBlue else Color.Transparent)
+                            .background(if (active) NeoYellow else Color.White, RoundedCornerShape(8.dp))
+                            .border(if (active) 1.5.dp else 0.dp, Color.Black, RoundedCornerShape(8.dp))
                             .clickable { onTypeChange(type) }
-                            .padding(vertical = 8.dp),
+                            .padding(vertical = 6.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = if (type == "All") "All" else if (type == "Income") "In" else "Out",
                             style = Typography.labelSmall.copy(
-                                color = if (active) DarkBg else TextSecondary,
-                                fontWeight = FontWeight.Bold
+                                color = Color.Black,
+                                fontWeight = FontWeight.Black
                             )
                         )
                     }
@@ -315,9 +447,8 @@ fun TransactionFilters(
             Row(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(DarkSurface)
-                    .border(1.dp, BorderGlass, RoundedCornerShape(12.dp))
+                    .background(Color.White, RoundedCornerShape(10.dp))
+                    .border(2.dp, Color.Black, RoundedCornerShape(10.dp))
                     .clickable {
                         val calendar = Calendar.getInstance()
                         if (startDate.isNotEmpty()) {
@@ -334,64 +465,28 @@ fun TransactionFilters(
                             onStartDateChange(String.format(Locale.getDefault(), "%04d-%02d-%02d", y, m + 1, d))
                         }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
                     }
-                    .padding(12.dp),
+                    .padding(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
-                Icon(Icons.Outlined.CalendarToday, contentDescription = "Start Date", tint = if (startDate.isNotEmpty()) AccentBlue else TextSecondary, modifier = Modifier.size(14.dp))
+                Icon(Icons.Outlined.CalendarToday, contentDescription = "Start Date", tint = Color.Black, modifier = Modifier.size(14.dp))
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = if (startDate.isNotEmpty()) startDate.takeLast(5) else "Start",
-                    style = Typography.labelSmall.copy(
-                        color = if (startDate.isNotEmpty()) AccentBlue else TextSecondary,
-                        fontWeight = FontWeight.Bold
-                    )
-                )
-            }
-
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(DarkSurface)
-                    .border(1.dp, BorderGlass, RoundedCornerShape(12.dp))
-                    .clickable {
-                        val calendar = Calendar.getInstance()
-                        if (endDate.isNotEmpty()) {
-                            val parts = endDate.split("-")
-                            if (parts.size == 3) {
-                                try {
-                                    calendar.set(Calendar.YEAR, parts[0].toInt())
-                                    calendar.set(Calendar.MONTH, parts[1].toInt() - 1)
-                                    calendar.set(Calendar.DAY_OF_MONTH, parts[2].toInt())
-                                } catch (e: Exception) {}
-                            }
-                        }
-                        DatePickerDialog(context, { _, y, m, d ->
-                            onEndDateChange(String.format(Locale.getDefault(), "%04d-%02d-%02d", y, m + 1, d))
-                        }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
-                    }
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Icon(Icons.Outlined.CalendarToday, contentDescription = "End Date", tint = if (endDate.isNotEmpty()) AccentBlue else TextSecondary, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = if (endDate.isNotEmpty()) endDate.takeLast(5) else "End",
-                    style = Typography.labelSmall.copy(
-                        color = if (endDate.isNotEmpty()) AccentBlue else TextSecondary,
-                        fontWeight = FontWeight.Bold
-                    )
+                    text = if (startDate.isEmpty()) "Date" else startDate.takeLast(5),
+                    style = Typography.labelSmall.copy(color = Color.Black, fontWeight = FontWeight.Black)
                 )
             }
             
             if (startDate.isNotEmpty() || endDate.isNotEmpty() || selectedType != "All") {
-                IconButton(
-                    onClick = { onStartDateChange(""); onEndDateChange(""); onTypeChange("All") },
-                    modifier = Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(ExpenseRed.copy(alpha = 0.1f))
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(NeoRed, RoundedCornerShape(10.dp))
+                        .border(2.dp, Color.Black, RoundedCornerShape(10.dp))
+                        .clickable { onStartDateChange(""); onEndDateChange(""); onTypeChange("All") },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.FilterAltOff, contentDescription = null, tint = ExpenseRed, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.FilterAltOff, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -405,8 +500,8 @@ fun CategoryScrollRow(
     onCategorySelect: (String) -> Unit
 ) {
     LazyRow(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-        contentPadding = PaddingValues(horizontal = 24.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         item {
@@ -422,18 +517,17 @@ fun CategoryScrollRow(
 fun CategoryChip(name: String, isSelected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (isSelected) AccentBlue.copy(alpha = 0.1f) else DarkSurface)
-            .border(1.dp, if (isSelected) AccentBlue else BorderGlass, RoundedCornerShape(12.dp))
+            .background(if (isSelected) NeoCyan else Color.White, RoundedCornerShape(8.dp))
+            .border(2.dp, Color.Black, RoundedCornerShape(8.dp))
             .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 14.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = name,
             style = Typography.labelSmall.copy(
-                color = if (isSelected) AccentBlue else TextSecondary,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                color = Color.Black,
+                fontWeight = FontWeight.Black
             )
         )
     }
@@ -447,61 +541,107 @@ fun ModernTransactionItem(
 ) {
     val isIncome = transaction.type.lowercase() == "income"
     
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(DarkSurface)
-            .border(1.dp, BorderGlass, RoundedCornerShape(20.dp))
-            .clickable { onClick() }
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
+    NeoCard(
+        modifier = Modifier.fillMaxWidth(),
+        backgroundColor = Color.White,
+        borderColor = Color.Black,
+        shadowColor = Color.Black,
+        shadowOffset = 3.dp,
+        cornerRadius = 10.dp,
+        onClick = onClick,
+        contentPadding = 12.dp
     ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(if (isIncome) IncomeGreen.copy(alpha = 0.1f) else ExpenseRed.copy(alpha = 0.1f)),
-            contentAlignment = Alignment.Center
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Icon(
-                imageVector = if (isIncome) Icons.AutoMirrored.Filled.TrendingUp else Icons.AutoMirrored.Filled.TrendingDown,
-                contentDescription = null,
-                tint = if (isIncome) IncomeGreen else ExpenseRed,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        
-        Spacer(modifier = Modifier.width(16.dp))
-        
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = transaction.description.ifEmpty { "Transaction" },
-                style = Typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = transaction.category?.name ?: "No Category",
-                style = Typography.bodySmall.copy(color = TextSecondary)
-            )
-        }
-        
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text = "${if (isIncome) "+" else "-"}${formatCurrency(transaction.amount)}",
-                style = Typography.bodyLarge.copy(
-                    fontWeight = FontWeight.Black,
-                    color = if (isIncome) IncomeGreen else ExpenseRed
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(if (isIncome) NeoGreen else NeoRed, CircleShape)
+                    .border(2.dp, Color.Black, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (isIncome) Icons.AutoMirrored.Filled.TrendingUp else Icons.AutoMirrored.Filled.TrendingDown,
+                    contentDescription = null,
+                    tint = if (isIncome) Color.Black else Color.White,
+                    modifier = Modifier.size(20.dp)
                 )
-            )
-            Text(transaction.transactionDate, style = Typography.bodySmall.copy(color = TextSecondary, fontSize = 10.sp))
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = transaction.description.ifEmpty { "Transaction" },
+                    style = Typography.bodyLarge.copy(fontWeight = FontWeight.Black, color = Color.Black),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = transaction.category?.name ?: "No Category",
+                    style = Typography.bodySmall.copy(color = NeoTextSecondary, fontWeight = FontWeight.Bold)
+                )
+            }
+
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "${if (isIncome) "+" else "-"}${formatCurrency(transaction.amount)}",
+                    style = Typography.bodyLarge.copy(
+                        fontWeight = FontWeight.Black,
+                        color = if (isIncome) Color(0xFF16A34A) else NeoRed
+                    )
+                )
+                Text(transaction.transactionDate, style = Typography.bodySmall.copy(color = NeoTextSecondary, fontSize = 10.sp))
+            }
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = NeoRed, modifier = Modifier.size(18.dp))
+            }
         }
-        
-        Spacer(modifier = Modifier.width(8.dp))
-        
-        IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = TextSecondary.copy(alpha = 0.3f), modifier = Modifier.size(18.dp))
+    }
+}
+
+@Composable
+fun EmptyTransactionsView() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        NeoCard(
+            modifier = Modifier.padding(32.dp),
+            backgroundColor = Color.White,
+            borderColor = Color.Black,
+            shadowColor = Color.Black,
+            shadowOffset = 4.dp,
+            cornerRadius = 12.dp
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Outlined.ReceiptLong, contentDescription = null, tint = Color.Black, modifier = Modifier.size(48.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("No Transactions Found", style = Typography.titleMedium.copy(fontWeight = FontWeight.Black, color = Color.Black))
+                Text("Try adjusting filters or tap + to add a transaction.", style = Typography.bodySmall.copy(color = NeoTextSecondary), textAlign = TextAlign.Center)
+            }
+        }
+    }
+}
+
+@Composable
+fun TransactionErrorView(message: String, onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = NeoRed, modifier = Modifier.size(48.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(message, color = NeoTextSecondary, textAlign = TextAlign.Center)
+        Spacer(modifier = Modifier.height(24.dp))
+        NeoButton(onClick = onRetry, containerColor = NeoYellow) {
+            Text("Retry", color = Color.Black, fontWeight = FontWeight.Black)
         }
     }
 }
@@ -513,22 +653,21 @@ fun TransactionFormDialog(
     transaction: TransactionResponse? = null,
     categories: List<CategoryResponse>,
     onDismiss: () -> Unit,
-    onConfirm: (categoryId: String, amount: Double, type: String, description: String, date: String) -> Unit
+    onConfirm: (categoryId: String?, amount: Double, type: String, description: String, date: String) -> Unit
 ) {
-    var amount by remember { mutableStateOf(transaction?.amount?.toString() ?: "") }
+    var amountText by remember { mutableStateOf(transaction?.amount?.toInt()?.toString() ?: "") }
     var description by remember { mutableStateOf(transaction?.description ?: "") }
-    var selectedType by remember { mutableStateOf(transaction?.type?.replaceFirstChar { it.uppercase() } ?: "Expense") }
-    var selectedCategoryId by remember { mutableStateOf(transaction?.category?.id ?: "") }
-    var date by remember { mutableStateOf(transaction?.transactionDate?.take(10) ?: SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())) }
-    var isExpanded by remember { mutableStateOf(false) }
+    var type by remember { mutableStateOf(transaction?.type ?: "expense") }
+    var selectedCategoryId by remember { mutableStateOf(transaction?.category?.id ?: categories.firstOrNull()?.id) }
+    var date by remember { mutableStateOf(transaction?.transactionDate ?: SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = DarkSurface,
-        shape = RoundedCornerShape(28.dp),
-        modifier = Modifier.border(1.dp, BorderGlass, RoundedCornerShape(28.dp)),
+        containerColor = Color.White,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.border(2.5.dp, Color.Black, RoundedCornerShape(16.dp)),
         title = {
-            Text(title, style = Typography.headlineSmall.copy(fontWeight = FontWeight.Black))
+            Text(title, style = Typography.headlineSmall.copy(fontWeight = FontWeight.Black, color = Color.Black))
         },
         text = {
             Column(
@@ -537,183 +676,92 @@ fun TransactionFormDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // Type selector
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(DarkBg)
-                        .padding(4.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    listOf("Income", "Expense").forEach { type ->
-                        val active = selectedType == type
+                    listOf("income" to "Income", "expense" to "Expense").forEach { (t, label) ->
+                        val selected = type.equals(t, ignoreCase = true)
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (active) (if (type == "Income") IncomeGreen else ExpenseRed) else Color.Transparent)
-                                .clickable { selectedType = type }
-                                .padding(vertical = 12.dp),
+                                .background(if (selected) (if (t == "income") NeoGreen else NeoRed) else Color.White, RoundedCornerShape(10.dp))
+                                .border(2.dp, Color.Black, RoundedCornerShape(10.dp))
+                                .clickable { type = t }
+                                .padding(12.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(text = type, color = if (active) DarkBg else TextSecondary, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-                
-                OutlinedTextField(
-                    value = amount,
-                    onValueChange = { amount = it },
-                    placeholder = { Text("0.00", color = TextSecondary.copy(alpha = 0.5f)) },
-                    prefix = { Text("Rp ", color = TextSecondary) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = AccentBlue,
-                        unfocusedBorderColor = BorderGlass,
-                        focusedContainerColor = DarkBg,
-                        unfocusedContainerColor = DarkBg
-                    )
-                )
-
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    placeholder = { Text("What was it for?", color = TextSecondary.copy(alpha = 0.5f)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = AccentBlue,
-                        unfocusedBorderColor = BorderGlass,
-                        focusedContainerColor = DarkBg,
-                        unfocusedContainerColor = DarkBg
-                    )
-                )
-
-                Box {
-                    OutlinedTextField(
-                        value = categories.find { it.id == selectedCategoryId }?.name ?: "Select Category",
-                        onValueChange = {},
-                        readOnly = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        trailingIcon = { Icon(Icons.Default.ArrowDropDown, null) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = BorderGlass,
-                            unfocusedBorderColor = BorderGlass,
-                            focusedContainerColor = DarkBg,
-                            unfocusedContainerColor = DarkBg
-                        )
-                    )
-                    Box(modifier = Modifier.matchParentSize().clickable { isExpanded = true })
-                    
-                    DropdownMenu(
-                        expanded = isExpanded,
-                        onDismissRequest = { isExpanded = false },
-                        modifier = Modifier.fillMaxWidth(0.7f).background(DarkSurface).border(1.dp, BorderGlass, RoundedCornerShape(12.dp))
-                    ) {
-                        categories.forEach { cat ->
-                            DropdownMenuItem(
-                                text = { Text(cat.name, color = TextPrimary) },
-                                onClick = { selectedCategoryId = cat.id; isExpanded = false }
-                            )
+                            Text(label, style = Typography.labelLarge.copy(color = if (selected && t == "expense") Color.White else Color.Black, fontWeight = FontWeight.Black))
                         }
                     }
                 }
 
-                val context = LocalContext.current
-                Box(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    Text("AMOUNT (RP)", style = Typography.labelSmall.copy(color = Color.Black, fontWeight = FontWeight.Black))
+                    Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
-                        value = date,
-                        onValueChange = {},
-                        readOnly = true,
-                        placeholder = { Text("Select Date", color = TextSecondary.copy(alpha = 0.5f)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        trailingIcon = { Icon(Icons.Default.CalendarToday, null, tint = TextSecondary, modifier = Modifier.size(20.dp)) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = AccentBlue,
-                            unfocusedBorderColor = BorderGlass,
-                            focusedContainerColor = DarkBg,
-                            unfocusedContainerColor = DarkBg
-                        )
-                    )
-                    Box(
+                        value = amountText,
+                        onValueChange = { amountText = it },
+                        placeholder = { Text("0", color = NeoTextSecondary.copy(alpha = 0.5f)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier
-                            .matchParentSize()
-                            .clickable {
-                                val calendar = Calendar.getInstance()
-                                val parts = date.split("-")
-                                if (parts.size == 3) {
-                                    try {
-                                        calendar.set(Calendar.YEAR, parts[0].toInt())
-                                        calendar.set(Calendar.MONTH, parts[1].toInt() - 1)
-                                        calendar.set(Calendar.DAY_OF_MONTH, parts[2].toInt())
-                                    } catch (e: Exception) {}
-                                }
-                                DatePickerDialog(context, { _, y, m, d ->
-                                    date = String.format(Locale.getDefault(), "%04d-%02d-%02d", y, m + 1, d)
-                                }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
-                            }
+                            .fillMaxWidth()
+                            .border(2.dp, Color.Black, RoundedCornerShape(10.dp)),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.Black,
+                            unfocusedTextColor = Color.Black,
+                            focusedBorderColor = Color.Black,
+                            unfocusedBorderColor = Color.Black,
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White
+                        )
+                    )
+                }
+
+                Column {
+                    Text("DESCRIPTION", style = Typography.labelSmall.copy(color = Color.Black, fontWeight = FontWeight.Black))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        placeholder = { Text("What was this for?", color = NeoTextSecondary.copy(alpha = 0.5f)) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(2.dp, Color.Black, RoundedCornerShape(10.dp)),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.Black,
+                            unfocusedTextColor = Color.Black,
+                            focusedBorderColor = Color.Black,
+                            unfocusedBorderColor = Color.Black,
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White
+                        )
                     )
                 }
             }
         },
         confirmButton = {
-            Button(
-                onClick = { 
-                    val amtVal = amount.toDoubleOrNull() ?: 0.0
-                    onConfirm(selectedCategoryId, amtVal, selectedType, description, date)
+            NeoButton(
+                onClick = {
+                    val amt = amountText.toDoubleOrNull() ?: 0.0
+                    if (amt > 0) {
+                        onConfirm(selectedCategoryId, amt, type, description, date)
+                    }
                 },
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AccentBlue, contentColor = DarkBg)
+                containerColor = NeoYellow,
+                contentColor = Color.Black,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (transaction == null) "Add Transaction" else "Save Changes", fontWeight = FontWeight.Black)
+                Text("Save Transaction", fontWeight = FontWeight.Black, color = Color.Black)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                Text("Cancel", color = TextSecondary)
+                Text("Cancel", color = NeoTextSecondary, fontWeight = FontWeight.Bold)
             }
         }
     )
-}
-
-@Composable
-fun EmptyTransactionsView() {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(40.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(Icons.Outlined.ReceiptLong, contentDescription = null, tint = TextSecondary.copy(alpha = 0.1f), modifier = Modifier.size(100.dp))
-        Spacer(modifier = Modifier.height(24.dp))
-        Text("Your financial history is empty", style = Typography.titleMedium.copy(color = TextSecondary.copy(alpha = 0.5f)))
-    }
-}
-
-@Composable
-fun TransactionErrorView(message: String, onRetry: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = ExpenseRed, modifier = Modifier.size(48.dp))
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(message, color = TextSecondary, textAlign = TextAlign.Center)
-        Spacer(modifier = Modifier.height(24.dp))
-        Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = AccentBlue)) {
-            Text("Retry", color = DarkBg)
-        }
-    }
 }

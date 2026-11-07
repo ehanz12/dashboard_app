@@ -187,6 +187,10 @@ class AuthViewModel : ViewModel() {
         }
     }
 
+    fun setError(message: String) {
+        _authState.value = AuthState.Error(message)
+    }
+
     fun resetState() {
         _authState.value = AuthState.Idle
     }

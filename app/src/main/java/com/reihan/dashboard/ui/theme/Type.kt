@@ -13,47 +13,55 @@ val Typography = Typography(
         fontSize = 32.sp,
         lineHeight = 40.sp,
         letterSpacing = (-0.5).sp,
-        color = TextPrimary
+        color = NeoTextPrimary
     ),
     headlineMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.Black,
         fontSize = 24.sp,
         lineHeight = 32.sp,
         letterSpacing = (-0.3).sp,
-        color = TextPrimary
+        color = NeoTextPrimary
+    ),
+    headlineSmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Black,
+        fontSize = 20.sp,
+        lineHeight = 28.sp,
+        letterSpacing = (-0.2).sp,
+        color = NeoTextPrimary
     ),
     titleLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.Black,
         fontSize = 20.sp,
         lineHeight = 28.sp,
         letterSpacing = 0.sp,
-        color = TextPrimary
+        color = NeoTextPrimary
     ),
     titleMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.ExtraBold,
         fontSize = 16.sp,
         lineHeight = 24.sp,
         letterSpacing = 0.15.sp,
-        color = TextPrimary
+        color = NeoTextPrimary
     ),
     bodyLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Normal,
+        fontWeight = FontWeight.Medium,
         fontSize = 16.sp,
         lineHeight = 24.sp,
         letterSpacing = 0.15.sp,
-        color = TextPrimary
+        color = NeoTextPrimary
     ),
     bodyMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Normal,
+        fontWeight = FontWeight.Medium,
         fontSize = 14.sp,
         lineHeight = 20.sp,
         letterSpacing = 0.25.sp,
-        color = TextSecondary
+        color = NeoTextSecondary
     ),
     bodySmall = TextStyle(
         fontFamily = FontFamily.SansSerif,
@@ -61,22 +69,30 @@ val Typography = Typography(
         fontSize = 12.sp,
         lineHeight = 16.sp,
         letterSpacing = 0.4.sp,
-        color = TextSecondary
+        color = NeoTextSecondary
     ),
     labelLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.Black,
         fontSize = 13.sp,
         lineHeight = 18.sp,
         letterSpacing = 0.5.sp,
-        color = TextPrimary
+        color = NeoTextPrimary
     ),
     labelMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.ExtraBold,
         fontSize = 12.sp,
         lineHeight = 16.sp,
         letterSpacing = 0.5.sp,
-        color = TextPrimary
+        color = NeoTextPrimary
+    ),
+    labelSmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Bold,
+        fontSize = 11.sp,
+        lineHeight = 14.sp,
+        letterSpacing = 0.5.sp,
+        color = NeoTextSecondary
     )
 )
